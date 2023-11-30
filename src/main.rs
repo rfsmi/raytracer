@@ -2,6 +2,7 @@ use std::{cell::RefCell, rc::Rc};
 
 use hit::Hit;
 use indicatif::ProgressIterator;
+use interval::Interval;
 use ray::Ray;
 use vec3::Vec3;
 
@@ -9,6 +10,7 @@ use crate::{hit_list::HitList, sphere::Sphere};
 
 mod hit;
 mod hit_list;
+mod interval;
 mod ray;
 mod sphere;
 mod vec3;
@@ -18,7 +20,7 @@ fn make_shared<T: Hit + 'static>(object: T) -> Rc<RefCell<dyn Hit>> {
 }
 
 fn ray_colour(r: &Ray, world: &dyn Hit) -> Vec3 {
-    if let Some(hr) = world.hit(r, 0.0, f64::MAX) {
+    if let Some(hr) = world.hit(r, Interval::new(0.0, f64::INFINITY)) {
         return (hr.normal + Vec3::UVW) / 2.0;
     }
 

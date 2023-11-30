@@ -1,5 +1,6 @@
 use crate::{
     hit::{Hit, HitRecord},
+    interval::Interval,
     ray::Ray,
     vec3::Vec3,
 };
@@ -16,7 +17,7 @@ impl Sphere {
 }
 
 impl Hit for Sphere {
-    fn hit(&self, r: &Ray, tmin: f64, tmax: f64) -> Option<crate::hit::HitRecord> {
+    fn hit(&self, r: &Ray, ray_t: Interval) -> Option<crate::hit::HitRecord> {
         let oc = r.origin - self.center;
         let a = r.direction.length_squared();
         let half_b = oc.dot(&r.direction);
@@ -31,7 +32,7 @@ impl Hit for Sphere {
         let t = [-1.0, 1.0]
             .iter()
             .map(|f| (-half_b + f * discriminant.sqrt()) / a)
-            .find(|t| &tmin < t && t < &tmax)?;
+            .find(|t| ray_t.surrounds(*t))?;
         let p = r.at(t);
         let outward_normal = (p - self.center) / self.radius;
         Some(HitRecord::new(r, p, t, outward_normal))

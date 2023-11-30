@@ -1,4 +1,4 @@
-use crate::{ray::Ray, vec3::Vec3};
+use crate::{interval::Interval, ray::Ray, vec3::Vec3};
 
 pub struct HitRecord {
     pub p: Vec3,
@@ -20,5 +20,5 @@ impl HitRecord {
 }
 
 pub trait Hit {
-    fn hit(&self, r: &Ray, tmin: f64, tmax: f64) -> Option<HitRecord>;
+    fn hit(&self, r: &Ray, ray_t: Interval) -> Option<HitRecord>;
 }
