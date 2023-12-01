@@ -55,16 +55,20 @@ pub struct Camera {
 fn write_colour(mut colour: Vec3, samples_per_pixel: usize) {
     colour /= samples_per_pixel as f64;
     let intensity = Interval::new(0.0, 1.0);
+    let gamma_colour = Vec3::new()
+        .x(colour.x.sqrt())
+        .y(colour.y.sqrt())
+        .z(colour.z.sqrt());
     println!(
         "{} {} {}",
-        (255.0 * intensity.clamp(colour.x)) as u8,
-        (255.0 * intensity.clamp(colour.y)) as u8,
-        (255.0 * intensity.clamp(colour.z)) as u8,
+        (255.0 * intensity.clamp(gamma_colour.x)) as u8,
+        (255.0 * intensity.clamp(gamma_colour.y)) as u8,
+        (255.0 * intensity.clamp(gamma_colour.z)) as u8,
     );
 }
 
 impl Camera {
-    pub fn ray_colour(&self, r: &Ray, depth: usize, world: &dyn Hit) -> Vec3 {
+    pub fn ray_colour(&self, world: &dyn Hit, r: &Ray, depth: usize, x: u32) -> Vec3 {
         if depth == 0 {
             return Vec3::new();
         }
@@ -72,7 +76,9 @@ impl Camera {
         if let Some(hr) = world.hit(r, Interval::new(1e-3, f64::INFINITY)) {
             // let direction = Vec3::random_on_hemisphere(&hr.normal);
             let direction = hr.normal + Vec3::random_unit();
-            return 0.5 * self.ray_colour(&Ray::new(hr.p, direction), depth - 1, world);
+            let brightness =
+                (x as f64 / self.config.image_width as f64 * 5.0).trunc() / 5.0 * 0.8 + 0.1;
+            return brightness * self.ray_colour(world, &Ray::new(hr.p, direction), depth - 1, x);
         }
 
         let unit_direction = r.direction.unit();
@@ -102,7 +108,7 @@ impl Camera {
                 let mut colour = Vec3::new();
                 for _ in 0..self.config.samples_per_pixel {
                     let r = self.get_ray(i, j);
-                    colour += self.ray_colour(&r, self.config.max_depth, world);
+                    colour += self.ray_colour(world, &r, self.config.max_depth, i);
                 }
 
                 write_colour(colour, self.config.samples_per_pixel);
