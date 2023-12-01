@@ -68,11 +68,12 @@ fn write_colour(mut colour: Vec3, samples_per_pixel: usize) {
 }
 
 impl Camera {
-    pub fn ray_colour(&self, world: &dyn Hit, r: &Ray, depth: usize, x: u32) -> Vec3 {
+    pub fn ray_colour(&self, world: &dyn Hit, r: &Ray, depth: usize) -> Vec3 {
         if depth == 0 {
             return Vec3::new();
         }
         let Some(hr) = world.hit(r, Interval::new(1e-3, f64::INFINITY)) else {
+            // Blue sky
             let unit_direction = r.direction.unit();
             let a = (unit_direction.y + 1.0) / 2.0;
             return (1.0 - a) * Vec3::new().x(1.0).y(1.0).z(1.0)
@@ -81,7 +82,7 @@ impl Camera {
         let Some((attenuation, scattered)) = hr.material.scatter(r, &hr) else {
             return Vec3::new();
         };
-        attenuation * self.ray_colour(world, &scattered, depth - 1, x)
+        attenuation * self.ray_colour(world, &scattered, depth - 1)
     }
 
     fn pixel_sample_square(&self) -> Vec3 {
@@ -106,9 +107,8 @@ impl Camera {
                 let mut colour = Vec3::new();
                 for _ in 0..self.config.samples_per_pixel {
                     let r = self.get_ray(i, j);
-                    colour += self.ray_colour(world, &r, self.config.max_depth, i);
+                    colour += self.ray_colour(world, &r, self.config.max_depth);
                 }
-
                 write_colour(colour, self.config.samples_per_pixel);
             }
         }

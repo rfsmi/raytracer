@@ -17,8 +17,11 @@ mod util;
 mod vec3;
 
 macro_rules! make {
-    (material <$kind:ty>::albedo( $r:expr, $g:expr, $b:expr )) => {
-        Rc::new(<$kind>::new().albedo(Vec3::new().x($r).y($g).z($b)))
+    (Metal albedo( $r:expr, $g:expr, $b:expr ) fuzz($f:expr)) => {
+        Rc::new(Metal::new().fuzz($f).albedo(Vec3::new().x($r).y($g).z($b)))
+    };
+    (Lambertian albedo( $r:expr, $g:expr, $b:expr )) => {
+        Rc::new(Lambertian::new().albedo(Vec3::new().x($r).y($g).z($b)))
     };
     (sphere $r:expr,  ($x:expr, $y:expr, $z:expr), $material:ident) => {
         Rc::new(Sphere::new(Vec3::new().x($x).y($y).z($z), $r, $material))
@@ -26,10 +29,10 @@ macro_rules! make {
 }
 
 fn main() {
-    let material_ground = make!(material <Lambertian>::albedo(0.8, 0.8, 0.0));
-    let material_center = make!(material <Lambertian>::albedo(0.7, 0.3, 0.3));
-    let material_left = make!(material <Metal>::albedo(0.8, 0.8, 0.8));
-    let material_right = make!(material <Metal>::albedo(0.8, 0.6, 0.2));
+    let material_ground = make!(Lambertian albedo(0.8, 0.8, 0.0));
+    let material_center = make!(Lambertian albedo(0.7, 0.3, 0.3));
+    let material_left = make!(Metal albedo(0.8, 0.8, 0.8) fuzz(0.3));
+    let material_right = make!(Metal albedo(0.8, 0.6, 0.2) fuzz(1.0));
 
     let mut world = HitList::new();
     world.add(make!(sphere 100.0, (0.0, -100.5, -1.0), material_ground));
