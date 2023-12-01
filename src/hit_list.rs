@@ -1,4 +1,4 @@
-use std::{cell::RefCell, rc::Rc};
+use std::rc::Rc;
 
 use crate::{
     hit::{Hit, HitRecord},
@@ -7,7 +7,7 @@ use crate::{
 };
 
 pub struct HitList {
-    objects: Vec<Rc<RefCell<dyn Hit>>>,
+    objects: Vec<Rc<dyn Hit>>,
 }
 
 impl HitList {
@@ -21,7 +21,7 @@ impl HitList {
         self.objects.clear();
     }
 
-    pub fn add(&mut self, object: Rc<RefCell<dyn Hit>>) {
+    pub fn add(&mut self, object: Rc<dyn Hit>) {
         self.objects.push(object);
     }
 }
@@ -31,7 +31,7 @@ impl Hit for HitList {
         self.objects
             .iter()
             .filter_map(move |object| {
-                let hr = object.borrow().hit(r, ray_t)?;
+                let hr = object.hit(r, ray_t)?;
                 ray_t.max = hr.t;
                 Some(hr)
             })

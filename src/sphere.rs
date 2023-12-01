@@ -1,6 +1,9 @@
+use std::rc::Rc;
+
 use crate::{
     hit::{Hit, HitRecord},
     interval::Interval,
+    material::Material,
     ray::Ray,
     vec3::Vec3,
 };
@@ -8,16 +11,21 @@ use crate::{
 pub struct Sphere {
     center: Vec3,
     radius: f64,
+    material: Rc<dyn Material>,
 }
 
 impl Sphere {
-    pub fn new(center: Vec3, radius: f64) -> Self {
-        Self { center, radius }
+    pub fn new(center: Vec3, radius: f64, material: Rc<dyn Material>) -> Self {
+        Self {
+            center,
+            radius,
+            material,
+        }
     }
 }
 
 impl Hit for Sphere {
-    fn hit(&self, r: &Ray, ray_t: Interval) -> Option<crate::hit::HitRecord> {
+    fn hit(&self, r: &Ray, ray_t: Interval) -> Option<HitRecord> {
         let oc = r.origin - self.center;
         let a = r.direction.length_squared();
         let half_b = oc.dot(&r.direction);
@@ -35,6 +43,12 @@ impl Hit for Sphere {
             .find(|t| ray_t.surrounds(*t))?;
         let p = r.at(t);
         let outward_normal = (p - self.center) / self.radius;
-        Some(HitRecord::new(r, p, t, outward_normal))
+        Some(HitRecord::new(
+            r,
+            p,
+            t,
+            outward_normal,
+            self.material.as_ref(),
+        ))
     }
 }

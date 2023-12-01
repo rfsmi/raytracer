@@ -72,18 +72,16 @@ impl Camera {
         if depth == 0 {
             return Vec3::new();
         }
-
-        if let Some(hr) = world.hit(r, Interval::new(1e-3, f64::INFINITY)) {
-            // let direction = Vec3::random_on_hemisphere(&hr.normal);
-            let direction = hr.normal + Vec3::random_unit();
-            let brightness =
-                (x as f64 / self.config.image_width as f64 * 5.0).trunc() / 5.0 * 0.8 + 0.1;
-            return brightness * self.ray_colour(world, &Ray::new(hr.p, direction), depth - 1, x);
-        }
-
-        let unit_direction = r.direction.unit();
-        let a = (unit_direction.y + 1.0) / 2.0;
-        (1.0 - a) * Vec3::new().x(1.0).y(1.0).z(1.0) + a * Vec3::new().x(0.5).y(0.7).z(1.0)
+        let Some(hr) = world.hit(r, Interval::new(1e-3, f64::INFINITY)) else {
+            let unit_direction = r.direction.unit();
+            let a = (unit_direction.y + 1.0) / 2.0;
+            return (1.0 - a) * Vec3::new().x(1.0).y(1.0).z(1.0)
+                + a * Vec3::new().x(0.5).y(0.7).z(1.0);
+        };
+        let Some((attenuation, scattered)) = hr.material.scatter(r, &hr) else {
+            return Vec3::new();
+        };
+        attenuation * self.ray_colour(world, &scattered, depth - 1, x)
     }
 
     fn pixel_sample_square(&self) -> Vec3 {

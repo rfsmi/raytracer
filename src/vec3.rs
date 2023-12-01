@@ -154,6 +154,14 @@ impl Vec3 {
             -p
         }
     }
+
+    pub fn reflect(&self, normal: &Vec3) -> Self {
+        *self - 2.0 * self.dot(normal) * *normal
+    }
+
+    pub fn near_zero(&self) -> bool {
+        element_wise!(self (< 1e-8) => (&&))
+    }
 }
 
 impl Neg for Vec3 {
