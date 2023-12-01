@@ -1,5 +1,9 @@
+use ::rand::thread_rng;
 use paste::paste;
+use rand::{distributions::uniform::SampleRange, random, Rng};
 use std::ops::*;
+
+use crate::util::default_struct;
 
 macro_rules! element_wise {
     [[$($a:tt)+] [$($b:tt)+] [$($c:tt)+] []] => {
@@ -83,42 +87,13 @@ macro_rules! binary_op {
     }
 }
 
-#[derive(Default, Clone, Copy)]
-pub struct Vec3 {
-    pub x: f64,
-    pub y: f64,
-    pub z: f64,
-}
+default_struct!(Vec3 {
+    x: f64 = 0.0,
+    y: f64 = 0.0,
+    z: f64 = 0.0,
+});
 
 impl Vec3 {
-    pub const U: Self = Self {
-        x: 1.0,
-        y: 0.0,
-        z: 0.0,
-    };
-
-    pub const V: Self = Self {
-        x: 0.0,
-        y: 1.0,
-        z: 0.0,
-    };
-
-    pub const W: Self = Self {
-        x: 0.0,
-        y: 0.0,
-        z: 1.0,
-    };
-
-    pub const UVW: Self = Self {
-        x: 1.0,
-        y: 1.0,
-        z: 1.0,
-    };
-
-    pub fn new(x: f64, y: f64, z: f64) -> Self {
-        Self { x, y, z }
-    }
-
     pub fn length_squared(&self) -> f64 {
         self.dot(self)
     }
@@ -142,6 +117,43 @@ impl Vec3 {
     pub fn unit(&self) -> Self {
         *self / self.length()
     }
+
+    pub fn random() -> Self {
+        Vec3::new().x(random()).y(random()).z(random())
+    }
+
+    pub fn random_range<R>(range: R) -> Self
+    where
+        R: Clone + SampleRange<f64>,
+    {
+        Vec3::new()
+            .x(thread_rng().gen_range(range.clone()))
+            .y(thread_rng().gen_range(range.clone()))
+            .z(thread_rng().gen_range(range))
+    }
+
+    fn random_within_unit_sphere() -> Self {
+        loop {
+            let p = Self::random_range(-1.0..=1.0);
+            if p.length_squared() < 1.0 {
+                return p;
+            }
+        }
+    }
+
+    fn random_unit() -> Self {
+        Self::random_within_unit_sphere().unit()
+    }
+
+    pub fn random_on_hemisphere(normal: &Vec3) -> Self {
+        let p = Self::random_unit();
+        if normal.dot(&p) > 0.0 {
+            // Is the same hemisphere as the normal
+            p
+        } else {
+            -p
+        }
+    }
 }
 
 impl Neg for Vec3 {
@@ -156,3 +168,96 @@ binary_op!(Add: +);
 binary_op!(Sub: -);
 binary_op!(Mul: *);
 binary_op!(Div: /);
+
+// default_struct!(P3 {
+//     x: f64 = 0.0,
+//     y: f64 = 0.0,
+//     z: f64 = 0.0,
+// });
+
+// default_struct!(V3 {
+//     x: f64 = 0.0,
+//     y: f64 = 0.0,
+//     z: f64 = 0.0,
+// });
+
+// macro_rules! define_impl {
+//     ([] [] [$($op:tt)*] [] f64, $($rest:tt)*) => {
+//         define_impl!([] [f64, self, self, self] [$($op)*] [] $($rest)*)
+//     };
+//     ([] [] [$($op:tt)*] [] $lhs:ty, $($rest:tt)*) => {
+//         define_impl!([] [$lhs, self.x, self.y, self.z] [$($op)*] [] $($rest)*)
+//     };
+//     ([] [$($lhs:tt)*] [$($op:tt)*] [] f64, $($rest:tt)*) => {
+//         define_impl!([] [$($lhs)*] [$($op)*] [f64, self, self, self] $($rest)*)
+//     };
+//     ([] [$($lhs:tt)*] [$($op:tt)*] [] $rhs:ty, $($rest:tt)*) => {
+//         define_impl!([] [$($lhs)*] [$($op)*] [$rhs, self.x, self.y, self.z] $($rest)*)
+//     };
+//     ([$trait:path] [$($lhs:tt)*] [$op:tt] [$($rhs:tt)*] $res:ty) => {
+//         paste! {
+//             impl $trait<$rhs> for $lhs {
+//                 type Output = $rhs;
+//                 fn [<$trait:lower>](self, rhs: $rhs) -> Self::Output {
+//                     panic!()
+//                 }
+//             }
+//         }
+//     };
+// }
+
+// /*
+//     algebra!{
+//         +-   :: <P3,  V3> -> P3,
+//         +*-/ :: <V3, f64> -> V3,
+//     };
+// */
+// macro_rules! algebra {
+//     { @ [$($ops:tt)*] + $($rest:tt)* } => {
+//         algebra!{ @ [(Add, +) $($ops)*] $($rest)* }
+//     };
+//     { @ [$($ops:tt)*] - $($rest:tt)* } => {
+//         algebra!{ @ [(Sub, -) $($ops)*] $($rest)* }
+//     };
+//     { @ [$($ops:tt)*] * $($rest:tt)* } => {
+//         algebra!{ @ [(Mul, *) $($ops)*] $($rest)* }
+//     };
+//     { @ [$($ops:tt)*] / $($rest:tt)* } => {
+//         algebra!{ @ [(Div, /) $($ops)*] $($rest)* }
+//     };
+//     {
+//         @ []
+//         :: < $lhs:ty, $rhs:ty > -> $res:ty ,
+//         $($rest:tt)*
+//     } => {
+//         algebra!{ @ [] $($rest)* }
+//     };
+//     {
+//         @ [($trait:path, $sym:tt) $($ops:tt)*]
+//         :: < $lhs:ty, $rhs:ty > -> $res:ty ,
+//         $($rest:tt)*
+//     } => {
+//         paste! {
+//             impl $trait<$rhs> for $lhs {
+//                 type Output = $rhs;
+//                 fn [<$trait:lower>](self, rhs: $rhs) -> Self::Output {
+//                     panic!()
+//                 }
+//             }
+//         }
+//         algebra!{
+//             @ [$($ops)*]
+//             :: < $lhs, $rhs > -> $res ,
+//             $($rest)*
+//         }
+//     };
+//     { @ [] } => {};
+//     [$($input:tt)*] => {
+//         algebra! { @ [] $($input)* }
+//     };
+// }
+
+// algebra! [
+//     +-   :: <P3,  V3> -> P3,
+//     +*-/ :: <V3, f64> -> V3,
+// ];
