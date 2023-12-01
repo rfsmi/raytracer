@@ -6,6 +6,7 @@ default_struct!(Config {
     aspect_ratio: f64 = 16.0 / 9.0,
     image_width: u32 = 400,
     samples_per_pixel: usize = 10,
+    max_depth: usize = 10,
 });
 
 impl Config {
@@ -63,10 +64,15 @@ fn write_colour(mut colour: Vec3, samples_per_pixel: usize) {
 }
 
 impl Camera {
-    pub fn ray_colour(&self, r: &Ray, world: &dyn Hit) -> Vec3 {
-        if let Some(hr) = world.hit(r, Interval::new(0.0, f64::INFINITY)) {
-            let direction = Vec3::random_on_hemisphere(&hr.normal);
-            return 0.5 * self.ray_colour(&Ray::new(hr.p, direction), world);
+    pub fn ray_colour(&self, r: &Ray, depth: usize, world: &dyn Hit) -> Vec3 {
+        if depth == 0 {
+            return Vec3::new();
+        }
+
+        if let Some(hr) = world.hit(r, Interval::new(1e-3, f64::INFINITY)) {
+            // let direction = Vec3::random_on_hemisphere(&hr.normal);
+            let direction = hr.normal + Vec3::random_unit();
+            return 0.5 * self.ray_colour(&Ray::new(hr.p, direction), depth - 1, world);
         }
 
         let unit_direction = r.direction.unit();
@@ -96,7 +102,7 @@ impl Camera {
                 let mut colour = Vec3::new();
                 for _ in 0..self.config.samples_per_pixel {
                     let r = self.get_ray(i, j);
-                    colour += self.ray_colour(&r, world);
+                    colour += self.ray_colour(&r, self.config.max_depth, world);
                 }
 
                 write_colour(colour, self.config.samples_per_pixel);

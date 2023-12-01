@@ -141,7 +141,7 @@ impl Vec3 {
         }
     }
 
-    fn random_unit() -> Self {
+    pub fn random_unit() -> Self {
         Self::random_within_unit_sphere().unit()
     }
 

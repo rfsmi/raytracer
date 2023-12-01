@@ -26,7 +26,7 @@ fn main() {
 
     Config::new()
         .image_width(800)
-        .samples_per_pixel(100)
+        .max_depth(50)
         .camera()
         .render(&world);
 }
