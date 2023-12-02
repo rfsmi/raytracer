@@ -24,6 +24,10 @@ impl<'a> HitRecord<'a> {
             t,
         }
     }
+
+    pub fn ray(&self, direction: V3) -> Ray {
+        Ray::new(self.p, direction)
+    }
 }
 
 pub trait Hit {

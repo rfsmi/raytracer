@@ -1,5 +1,5 @@
 macro_rules! default_struct {
-    ($name:ident {$($field:ident : $type:ty = $default:expr,)*}) => {
+    ($name:ident {$($field:ident : $type:ty = $default:expr),* $(,)?}) => {
         #[derive(Clone, Copy)]
         pub struct $name {
             $(pub $field: $type,)*

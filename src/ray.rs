@@ -6,11 +6,8 @@ pub struct Ray {
 }
 
 impl Ray {
-    pub fn new(origin: P3, dir: V3) -> Self {
-        Ray {
-            origin,
-            direction: dir,
-        }
+    pub fn new(origin: P3, direction: V3) -> Self {
+        Ray { origin, direction }
     }
 
     pub fn at(&self, t: f64) -> P3 {
