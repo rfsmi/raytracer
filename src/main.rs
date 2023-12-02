@@ -55,6 +55,8 @@ fn main() {
         .lookfrom(P3::new().x(-2.0).y(2.0).z(1.0))
         .lookat(P3::new().z(-1.0))
         .vup(V3::new().y(1.0))
+        .defocus_angle(10.0)
+        .focus_dist(3.4)
         .samples_per_pixel(100)
         .max_depth(50);
     config.camera().render(&world);

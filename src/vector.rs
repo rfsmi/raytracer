@@ -53,7 +53,7 @@ impl V3 {
     }
 
     pub fn unit(&self) -> Self {
-        *self / self.length()
+        self / self.length()
     }
 
     pub fn random() -> Self {
@@ -73,6 +73,17 @@ impl V3 {
     fn random_within_unit_sphere() -> Self {
         loop {
             let p = Self::random_range(-1.0..=1.0);
+            if p.length_squared() < 1.0 {
+                return p;
+            }
+        }
+    }
+
+    pub fn random_within_unit_disk() -> Self {
+        loop {
+            let p = V3::new()
+                .x(thread_rng().gen_range(-1.0..=1.0))
+                .y(thread_rng().gen_range(-1.0..=1.0));
             if p.length_squared() < 1.0 {
                 return p;
             }
