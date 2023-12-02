@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use crate::{
     hit::{Hit, HitRecord},
     interval::Interval,
@@ -6,14 +8,14 @@ use crate::{
     vector::P3,
 };
 
-pub struct Sphere<'a> {
+pub struct Sphere {
     center: P3,
     radius: f64,
-    material: &'a dyn Material,
+    material: Arc<dyn Material>,
 }
 
-impl<'a> Sphere<'a> {
-    pub fn new(center: P3, radius: f64, material: &'a dyn Material) -> Self {
+impl Sphere {
+    pub fn new(center: P3, radius: f64, material: Arc<dyn Material>) -> Self {
         Self {
             center,
             radius,
@@ -22,7 +24,7 @@ impl<'a> Sphere<'a> {
     }
 }
 
-impl Hit for Sphere<'_> {
+impl Hit for Sphere {
     fn hit(&self, r: &Ray, ray_t: Interval) -> Option<HitRecord> {
         let oc = r.origin - self.center;
         let a = r.direction.length_squared();
@@ -41,6 +43,6 @@ impl Hit for Sphere<'_> {
             .find(|t| ray_t.surrounds(*t))?;
         let p = r.at(t);
         let outward_normal = (p - self.center) / self.radius;
-        Some(HitRecord::new(r, p, t, outward_normal, self.material))
+        Some(HitRecord::new(r, p, t, outward_normal, &*self.material))
     }
 }

@@ -1,16 +1,14 @@
-use std::rc::Rc;
-
 use crate::{
     hit::{Hit, HitRecord},
     interval::Interval,
     ray::Ray,
 };
 
-pub struct HitList<'a> {
-    objects: Vec<Box<dyn 'a + Hit>>,
+pub struct HitList {
+    objects: Vec<Box<dyn Hit>>,
 }
 
-impl<'a> HitList<'a> {
+impl HitList {
     pub fn new() -> Self {
         Self {
             objects: Vec::new(),
@@ -21,12 +19,12 @@ impl<'a> HitList<'a> {
         self.objects.clear();
     }
 
-    pub fn add(&mut self, object: Box<dyn 'a + Hit>) {
+    pub fn add(&mut self, object: Box<dyn Hit>) {
         self.objects.push(object);
     }
 }
 
-impl<'a> Hit for HitList<'a> {
+impl Hit for HitList {
     fn hit(&self, r: &Ray, mut ray_t: Interval) -> Option<HitRecord> {
         self.objects
             .iter()
