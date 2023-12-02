@@ -30,6 +30,6 @@ impl<'a> HitRecord<'a> {
     }
 }
 
-pub trait Hit {
+pub trait Hit: Send + Sync {
     fn hit<'a>(&'a self, r: &Ray, ray_t: Interval) -> Option<HitRecord<'a>>;
 }

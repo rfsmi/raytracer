@@ -1,4 +1,6 @@
-use indicatif::ProgressIterator;
+use std::{collections::HashMap, time::Instant};
+
+use indicatif::{ParallelProgressIterator, ProgressBar};
 
 use crate::{
     hit::Hit,
@@ -7,6 +9,8 @@ use crate::{
     util::default_struct,
     vector::{P3, V3},
 };
+use itertools::Itertools;
+use rayon::iter::{IntoParallelIterator, ParallelBridge, ParallelIterator};
 
 default_struct!(Config {
     aspect_ratio: f64 = 16.0 / 9.0,
@@ -78,8 +82,8 @@ impl Config {
     }
 }
 
-fn write_colour(mut colour: V3, samples_per_pixel: usize) {
-    colour /= samples_per_pixel as f64;
+fn write_colour(colour: &V3, samples_per_pixel: usize) {
+    let colour = colour / samples_per_pixel as f64;
     let intensity = Interval::new(0.0, 1.0);
     let gamma_colour = V3::new()
         .x(colour.x.sqrt())
@@ -136,15 +140,43 @@ impl Camera {
 
     pub fn render(&self, world: &dyn Hit) {
         println!("P3\n{} {}\n255", self.config.image_width, self.image_height);
-        for j in (0..self.image_height).progress() {
+        let start = Instant::now();
+        let image: HashMap<_, _> = (0..self.image_height)
+            .cartesian_product(0..self.config.image_width)
+            .par_bridge()
+            .map(move |(j, i)| {
+                let colour = (0..self.config.samples_per_pixel)
+                    .into_par_iter()
+                    .map(|_| {
+                        let r = self.get_ray(i, j);
+                        self.ray_colour(world, &r, self.config.max_depth)
+                    })
+                    .reduce(V3::new, |a, b| a + b);
+                ((i, j), colour)
+            })
+            .progress_count((self.image_height * self.config.image_width) as u64)
+            .collect();
+        eprintln!("Completed in {:.3} seconds", start.elapsed().as_secs_f32());
+        for j in 0..self.image_height {
             for i in 0..self.config.image_width {
-                let mut colour = V3::new();
-                for _ in 0..self.config.samples_per_pixel {
-                    let r = self.get_ray(i, j);
-                    colour += self.ray_colour(world, &r, self.config.max_depth);
-                }
-                write_colour(colour, self.config.samples_per_pixel);
+                write_colour(
+                    image.get(&(i, j)).expect("there is a pixel"),
+                    self.config.samples_per_pixel,
+                );
             }
         }
     }
 }
+
+/*
+
+
+let mut queue: VecDeque<((u32, u32), u32)> =
+    (0..self.image_height)
+    .flat_map(|i| (0..self.image_width).flat_map(|j| repeat((i, j), 100)));
+
+job_queue = Pixel(0, 0).with_capacity(100);
+
+
+
+*/

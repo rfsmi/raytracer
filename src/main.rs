@@ -18,20 +18,16 @@ mod vector;
 
 macro_rules! make {
     (Metal albedo( $r:expr, $g:expr, $b:expr ) fuzz($f:expr)) => {
-        Rc::new(Metal::new().fuzz($f).albedo(V3::new().x($r).y($g).z($b))) as Rc<dyn Material>
+        Box::new(Metal::new().fuzz($f).albedo(V3::new().x($r).y($g).z($b))) as Box<dyn Material>
     };
     (Lambertian albedo( $r:expr, $g:expr, $b:expr )) => {
-        Rc::new(Lambertian::new().albedo(V3::new().x($r).y($g).z($b))) as Rc<dyn Material>
+        Box::new(Lambertian::new().albedo(V3::new().x($r).y($g).z($b))) as Box<dyn Material>
     };
     (Dielectric ir( $ir:expr )) => {
-        Rc::new(Dielectric::new().ir($ir)) as Rc<dyn Material>
+        Box::new(Dielectric::new().ir($ir)) as Box<dyn Material>
     };
     (sphere $r:expr,  ($x:expr, $y:expr, $z:expr), $material:ident) => {
-        Rc::new(Sphere::new(
-            P3::new().x($x).y($y).z($z),
-            $r,
-            Rc::clone(&$material),
-        ))
+        Box::new(Sphere::new(P3::new().x($x).y($y).z($z), $r, &*$material))
     };
 }
 
@@ -55,9 +51,9 @@ fn main() {
         .lookfrom(P3::new().x(-2.0).y(2.0).z(1.0))
         .lookat(P3::new().z(-1.0))
         .vup(V3::new().y(1.0))
-        .defocus_angle(10.0)
+        .defocus_angle(1.0)
         .focus_dist(3.4)
-        .samples_per_pixel(100)
+        .samples_per_pixel(500)
         .max_depth(50);
     config.camera().render(&world);
 }
