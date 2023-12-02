@@ -48,10 +48,14 @@ fn main() {
     world.add(make!(sphere - 0.4, (-1.0, 0.0, -1.0), material_left));
     world.add(make!(sphere 0.5, (1.0, 0.0, -1.0), material_right));
 
-    Config::new()
+    let config = Config::new()
         .image_width(800)
-        .max_depth(50)
+        .aspect_ratio(16.0 / 9.0)
+        .vfov(20.0)
+        .lookfrom(P3::new().x(-2.0).y(2.0).z(1.0))
+        .lookat(P3::new().z(-1.0))
+        .vup(V3::new().y(1.0))
         .samples_per_pixel(100)
-        .camera()
-        .render(&world);
+        .max_depth(50);
+    config.camera().render(&world);
 }

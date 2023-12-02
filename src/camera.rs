@@ -13,33 +13,45 @@ default_struct!(Config {
     image_width: u32 = 400,
     samples_per_pixel: usize = 10,
     max_depth: usize = 10,
+    vfov: f64 = 90.0,
+    lookfrom: P3 = P3::new().z(-1.0),
+    lookat: P3 = P3::new(),
+    vup: V3 = V3::new().y(1.0),
 });
 
 impl Config {
     pub fn camera(self) -> Camera {
         let image_height: u32 = (self.image_width as f64 / self.aspect_ratio).max(1.0) as u32;
-        let center = P3::new();
+        let center = self.lookfrom;
 
         // Camera
-        let focal_length = 1.0;
-        let viewport_height = 2.0;
+        let focal_length = (self.lookfrom - self.lookat).length();
+        let theta = self.vfov.to_radians();
+        let h = (theta / 2.0).tan();
+        let viewport_height = 2.0 * h * focal_length;
         let viewport_width = viewport_height * self.image_width as f64 / image_height as f64;
-        let camera_center = P3::new();
+
+        // Calculate the basis vectors
+        let w = (self.lookfrom - self.lookat).unit();
+        let u = self.vup.cross(&w).unit();
+        let v = w.cross(&u);
 
         // Vectors spanning the viewport
-        let viewport_u = V3::new().x(viewport_width);
-        let viewport_v = V3::new().y(-viewport_height);
+        let viewport_u = viewport_width * u;
+        let viewport_v = viewport_height * -v;
 
         // Distances between pixels
         let pixel_delta_u = viewport_u / self.image_width as f64;
         let pixel_delta_v = viewport_v / image_height as f64;
 
         // Find location of upper left pixel
-        let viewport_upper_left =
-            camera_center - V3::new().z(1.0) * focal_length - (viewport_u + viewport_v) / 2.0;
+        let viewport_upper_left = center - focal_length * w - (viewport_u + viewport_v) / 2.0;
         let pixel00_loc = viewport_upper_left + (pixel_delta_u + pixel_delta_v) / 2.0;
         Camera {
             config: self,
+            u,
+            v,
+            w,
             image_height,
             center,
             pixel00_loc,
@@ -51,6 +63,9 @@ impl Config {
 
 pub struct Camera {
     config: Config,
+    u: V3,
+    v: V3,
+    w: V3,
     image_height: u32,
     center: P3,
     pixel00_loc: P3,
