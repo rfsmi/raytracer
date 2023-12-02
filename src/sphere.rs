@@ -5,17 +5,17 @@ use crate::{
     interval::Interval,
     material::Material,
     ray::Ray,
-    vec3::Vec3,
+    vector::P3,
 };
 
 pub struct Sphere {
-    center: Vec3,
+    center: P3,
     radius: f64,
     material: Rc<dyn Material>,
 }
 
 impl Sphere {
-    pub fn new(center: Vec3, radius: f64, material: Rc<dyn Material>) -> Self {
+    pub fn new(center: P3, radius: f64, material: Rc<dyn Material>) -> Self {
         Self {
             center,
             radius,

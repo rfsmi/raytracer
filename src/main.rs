@@ -2,7 +2,7 @@ use std::rc::Rc;
 
 use camera::Config;
 use material::{Lambertian, Metal};
-use vec3::Vec3;
+use vector::{P3, V3};
 
 use crate::{hit_list::HitList, sphere::Sphere};
 
@@ -14,17 +14,17 @@ mod material;
 mod ray;
 mod sphere;
 mod util;
-mod vec3;
+mod vector;
 
 macro_rules! make {
     (Metal albedo( $r:expr, $g:expr, $b:expr ) fuzz($f:expr)) => {
-        Rc::new(Metal::new().fuzz($f).albedo(Vec3::new().x($r).y($g).z($b)))
+        Rc::new(Metal::new().fuzz($f).albedo(V3::new().x($r).y($g).z($b)))
     };
     (Lambertian albedo( $r:expr, $g:expr, $b:expr )) => {
-        Rc::new(Lambertian::new().albedo(Vec3::new().x($r).y($g).z($b)))
+        Rc::new(Lambertian::new().albedo(V3::new().x($r).y($g).z($b)))
     };
     (sphere $r:expr,  ($x:expr, $y:expr, $z:expr), $material:ident) => {
-        Rc::new(Sphere::new(Vec3::new().x($x).y($y).z($z), $r, $material))
+        Rc::new(Sphere::new(P3::new().x($x).y($y).z($z), $r, $material))
     };
 }
 

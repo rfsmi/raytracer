@@ -1,6 +1,12 @@
 use indicatif::ProgressIterator;
 
-use crate::{hit::Hit, interval::Interval, ray::Ray, util::default_struct, vec3::Vec3};
+use crate::{
+    hit::Hit,
+    interval::Interval,
+    ray::Ray,
+    util::default_struct,
+    vector::{P3, V3},
+};
 
 default_struct!(Config {
     aspect_ratio: f64 = 16.0 / 9.0,
@@ -12,17 +18,17 @@ default_struct!(Config {
 impl Config {
     pub fn camera(self) -> Camera {
         let image_height: u32 = (self.image_width as f64 / self.aspect_ratio).max(1.0) as u32;
-        let center = Vec3::new();
+        let center = P3::new();
 
         // Camera
         let focal_length = 1.0;
         let viewport_height = 2.0;
         let viewport_width = viewport_height * self.image_width as f64 / image_height as f64;
-        let camera_center = Vec3::new();
+        let camera_center = P3::new();
 
         // Vectors spanning the viewport
-        let viewport_u = Vec3::new().x(viewport_width);
-        let viewport_v = Vec3::new().y(-viewport_height);
+        let viewport_u = V3::new().x(viewport_width);
+        let viewport_v = V3::new().y(-viewport_height);
 
         // Distances between pixels
         let pixel_delta_u = viewport_u / self.image_width as f64;
@@ -30,7 +36,7 @@ impl Config {
 
         // Find location of upper left pixel
         let viewport_upper_left =
-            camera_center - Vec3::new().z(1.0) * focal_length - (viewport_u + viewport_v) / 2.0;
+            camera_center - V3::new().z(1.0) * focal_length - (viewport_u + viewport_v) / 2.0;
         let pixel00_loc = viewport_upper_left + (pixel_delta_u + pixel_delta_v) / 2.0;
         Camera {
             config: self,
@@ -46,16 +52,16 @@ impl Config {
 pub struct Camera {
     config: Config,
     image_height: u32,
-    center: Vec3,
-    pixel00_loc: Vec3,
-    pixel_delta_u: Vec3,
-    pixel_delta_v: Vec3,
+    center: P3,
+    pixel00_loc: P3,
+    pixel_delta_u: V3,
+    pixel_delta_v: V3,
 }
 
-fn write_colour(mut colour: Vec3, samples_per_pixel: usize) {
+fn write_colour(mut colour: V3, samples_per_pixel: usize) {
     colour /= samples_per_pixel as f64;
     let intensity = Interval::new(0.0, 1.0);
-    let gamma_colour = Vec3::new()
+    let gamma_colour = V3::new()
         .x(colour.x.sqrt())
         .y(colour.y.sqrt())
         .z(colour.z.sqrt());
@@ -68,24 +74,23 @@ fn write_colour(mut colour: Vec3, samples_per_pixel: usize) {
 }
 
 impl Camera {
-    pub fn ray_colour(&self, world: &dyn Hit, r: &Ray, depth: usize) -> Vec3 {
+    pub fn ray_colour(&self, world: &dyn Hit, r: &Ray, depth: usize) -> V3 {
         if depth == 0 {
-            return Vec3::new();
+            return V3::new();
         }
         let Some(hr) = world.hit(r, Interval::new(1e-3, f64::INFINITY)) else {
             // Blue sky
             let unit_direction = r.direction.unit();
             let a = (unit_direction.y + 1.0) / 2.0;
-            return (1.0 - a) * Vec3::new().x(1.0).y(1.0).z(1.0)
-                + a * Vec3::new().x(0.5).y(0.7).z(1.0);
+            return (1.0 - a) * V3::new().x(1.0).y(1.0).z(1.0) + a * V3::new().x(0.5).y(0.7).z(1.0);
         };
         let Some((attenuation, scattered)) = hr.material.scatter(r, &hr) else {
-            return Vec3::new();
+            return V3::new();
         };
         attenuation * self.ray_colour(world, &scattered, depth - 1)
     }
 
-    fn pixel_sample_square(&self) -> Vec3 {
+    fn pixel_sample_square(&self) -> V3 {
         let px = -0.5 + ::rand::random::<f64>();
         let py = -0.5 + ::rand::random::<f64>();
         (px * self.pixel_delta_u) + (py * self.pixel_delta_v)
@@ -104,7 +109,7 @@ impl Camera {
         println!("P3\n{} {}\n255", self.config.image_width, self.image_height);
         for j in (0..self.image_height).progress() {
             for i in 0..self.config.image_width {
-                let mut colour = Vec3::new();
+                let mut colour = V3::new();
                 for _ in 0..self.config.samples_per_pixel {
                     let r = self.get_ray(i, j);
                     colour += self.ray_colour(world, &r, self.config.max_depth);
