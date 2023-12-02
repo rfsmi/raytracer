@@ -2,16 +2,16 @@ use std::sync::Arc;
 
 use crate::{
     hit::{Hit, HitRecord},
-    interval::Interval,
     material::Material,
-    ray::Ray,
-    vector::P3,
+    ray::{Interval, Ray, AABB},
+    vector::{P3, V3},
 };
 
 pub struct Sphere {
     center: P3,
     radius: f64,
     material: Arc<dyn Material>,
+    aabb: AABB,
 }
 
 impl Sphere {
@@ -20,6 +20,10 @@ impl Sphere {
             center,
             radius,
             material,
+            aabb: AABB::new(
+                center - radius,
+                2.0 * V3::new().x(radius).y(radius).z(radius),
+            ),
         }
     }
 }
@@ -44,5 +48,9 @@ impl Hit for Sphere {
         let p = r.at(t);
         let outward_normal = (p - self.center) / self.radius;
         Some(HitRecord::new(r, p, t, outward_normal, &*self.material))
+    }
+
+    fn aabb(&self) -> &AABB {
+        &self.aabb
     }
 }

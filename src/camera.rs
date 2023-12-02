@@ -1,11 +1,10 @@
 use std::{collections::HashMap, time::Instant};
 
-use indicatif::{ParallelProgressIterator, ProgressBar};
+use indicatif::ParallelProgressIterator;
 
 use crate::{
     hit::Hit,
-    interval::Interval,
-    ray::Ray,
+    ray::{Interval, Ray},
     util::default_struct,
     vector::{P3, V3},
 };

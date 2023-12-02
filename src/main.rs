@@ -5,12 +5,10 @@ use material::*;
 use rand::{random, thread_rng, Rng};
 use vector::{P3, V3};
 
-use crate::{hit_list::HitList, sphere::Sphere};
+use crate::{hit::HitList, sphere::Sphere};
 
 mod camera;
 mod hit;
-mod hit_list;
-mod interval;
 mod material;
 mod ray;
 mod sphere;
@@ -37,9 +35,17 @@ macro_rules! make {
 }
 
 fn main() {
-    let mut world = HitList::new();
     let ground_material = make!(Lambertian albedo(0.5, 0.5, 0.5));
-    world.add(make!(sphere 1000.0, (0.0, -1000.0, 0.0), ground_material));
+    let mut world = HitList::new(make!(sphere 1000.0, (0.0, -1000.0, 0.0), ground_material));
+
+    let material1 = make!(Dielectric ir(1.5));
+    world.add(make!(sphere 1.0, (0.0, 1.0, 0.0), material1));
+
+    let material2 = make!(Lambertian albedo(0.4, 0.2, 0.1));
+    world.add(make!(sphere 1.0, (-4.0, 1.0, 0.0), material2));
+
+    let material3 = make!(Metal albedo(0.7, 0.6, 0.5) fuzz(0.0));
+    world.add(make!(sphere 1.0, (4.0, 1.0, 0.0), material3));
 
     for a in -11..11 {
         for b in -11..11 {
@@ -67,25 +73,17 @@ fn main() {
         }
     }
 
-    let material1 = make!(Dielectric ir(1.5));
-    world.add(make!(sphere 1.0, (0.0, 1.0, 0.0), material1));
-
-    let material2 = make!(Lambertian albedo(0.4, 0.2, 0.1));
-    world.add(make!(sphere 1.0, (-4.0, 1.0, 0.0), material2));
-
-    let material3 = make!(Metal albedo(0.7, 0.6, 0.5) fuzz(0.0));
-    world.add(make!(sphere 1.0, (4.0, 1.0, 0.0), material3));
-
     let config = Config::new()
         .aspect_ratio(16.0 / 9.0)
-        .image_width(1200)
+        .image_width(400)
         .vfov(20.0)
         .lookfrom(P3::new().x(13.0).y(2.0).z(3.0))
         .lookat(P3::new())
         .vup(V3::new().y(1.0))
         .defocus_angle(0.6)
         .focus_dist(10.0)
-        .samples_per_pixel(500)
+        .samples_per_pixel(50)
+        // .samples_per_pixel(500)
         .max_depth(50);
     config.camera().render(&world);
 }
