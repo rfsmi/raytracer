@@ -1,10 +1,11 @@
 use std::sync::Arc;
 
 use crate::{
+    aabb::AABB,
     hit::{Hit, HitRecord},
     material::Material,
-    ray::{Interval, Ray, AABB},
-    vector::{P3, V3},
+    ray::{Interval, Ray},
+    vector::P3,
 };
 
 pub struct Sphere {
@@ -20,10 +21,7 @@ impl Sphere {
             center,
             radius,
             material,
-            aabb: AABB::new(
-                center - radius,
-                2.0 * V3::new().x(radius).y(radius).z(radius),
-            ),
+            aabb: AABB::bounding_box([center - radius, center + radius]),
         }
     }
 }

@@ -1,12 +1,15 @@
 use std::sync::Arc;
 
+use bvh::BVH;
 use camera::Config;
 use material::*;
 use rand::{random, thread_rng, Rng};
 use vector::{P3, V3};
 
-use crate::{hit::HitList, sphere::Sphere};
+use crate::{hit::Hit, sphere::Sphere};
 
+mod aabb;
+mod bvh;
 mod camera;
 mod hit;
 mod material;
@@ -30,22 +33,24 @@ macro_rules! make {
             P3::new().x($x).y($y).z($z),
             $r,
             Arc::clone(&$material),
-        ))
+        )) as Box<dyn Hit>
     };
 }
 
 fn main() {
+    let mut objects = Vec::new();
+
     let ground_material = make!(Lambertian albedo(0.5, 0.5, 0.5));
-    let mut world = HitList::new(make!(sphere 1000.0, (0.0, -1000.0, 0.0), ground_material));
+    objects.push(make!(sphere 1000.0, (0.0, -1000.0, 0.0), ground_material));
 
     let material1 = make!(Dielectric ir(1.5));
-    world.add(make!(sphere 1.0, (0.0, 1.0, 0.0), material1));
+    objects.push(make!(sphere 1.0, (0.0, 1.0, 0.0), material1));
 
     let material2 = make!(Lambertian albedo(0.4, 0.2, 0.1));
-    world.add(make!(sphere 1.0, (-4.0, 1.0, 0.0), material2));
+    objects.push(make!(sphere 1.0, (-4.0, 1.0, 0.0), material2));
 
     let material3 = make!(Metal albedo(0.7, 0.6, 0.5) fuzz(0.0));
-    world.add(make!(sphere 1.0, (4.0, 1.0, 0.0), material3));
+    objects.push(make!(sphere 1.0, (4.0, 1.0, 0.0), material3));
 
     for a in -11..11 {
         for b in -11..11 {
@@ -69,9 +74,11 @@ fn main() {
                 2 => Arc::new(Dielectric::new().ir(1.5)) as Arc<dyn Material>,
                 _ => unreachable!(),
             };
-            world.add(Box::new(Sphere::new(center, 0.2, material)));
+            objects.push(Box::new(Sphere::new(center, 0.2, material)));
         }
     }
+
+    let world = BVH::new(objects);
 
     let config = Config::new()
         .aspect_ratio(16.0 / 9.0)
@@ -82,8 +89,8 @@ fn main() {
         .vup(V3::new().y(1.0))
         .defocus_angle(0.6)
         .focus_dist(10.0)
-        .samples_per_pixel(50)
-        // .samples_per_pixel(500)
+        .samples_per_pixel(40)
         .max_depth(50);
+
     config.camera().render(&world);
 }

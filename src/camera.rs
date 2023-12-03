@@ -1,6 +1,6 @@
 use std::{collections::HashMap, time::Instant};
 
-use indicatif::ParallelProgressIterator;
+use indicatif::*;
 
 use crate::{
     hit::Hit,
@@ -166,16 +166,3 @@ impl Camera {
         }
     }
 }
-
-/*
-
-
-let mut queue: VecDeque<((u32, u32), u32)> =
-    (0..self.image_height)
-    .flat_map(|i| (0..self.image_width).flat_map(|j| repeat((i, j), 100)));
-
-job_queue = Pixel(0, 0).with_capacity(100);
-
-
-
-*/

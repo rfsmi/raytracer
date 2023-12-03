@@ -6,16 +6,10 @@ pub struct Ray {
     pub inv_direction: V3,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Debug)]
 pub struct Interval {
     pub min: f64,
     pub max: f64,
-}
-
-#[derive(Clone, Copy, PartialEq, Debug)]
-pub struct AABB {
-    pub min: P3,
-    pub max: P3,
 }
 
 impl Ray {
@@ -30,14 +24,6 @@ impl Ray {
 
     pub fn at(&self, t: f64) -> P3 {
         self.origin + t * self.direction
-    }
-
-    pub fn intersects_aabb(&self, aabb: &AABB, interval: &Interval) -> bool {
-        let t1 = (aabb.min - self.origin) * self.inv_direction;
-        let t2 = (aabb.max - self.origin) * self.inv_direction;
-        let tmin = (t1.x.min(t2.x)).max(t1.y.min(t2.y)).max(t1.z.min(t2.z));
-        let tmax = (t1.x.max(t2.x)).min(t1.y.max(t2.y)).min(t1.z.max(t2.z));
-        tmin <= interval.max && interval.min <= tmax
     }
 }
 
@@ -55,62 +41,78 @@ impl Interval {
     }
 }
 
-impl AABB {
-    pub fn new(min: P3, size: V3) -> Self {
-        Self {
-            min,
-            max: min + size,
-        }
-    }
-
-    pub fn union(&self, other: &Self) -> Self {
-        Self {
-            min: P3::new()
-                .x(self.min.x.min(other.min.x))
-                .y(self.min.y.min(other.min.y))
-                .z(self.min.z.min(other.min.z)),
-            max: P3::new()
-                .x(self.max.x.max(other.max.x))
-                .y(self.max.y.max(other.max.y))
-                .z(self.max.z.max(other.max.z)),
-        }
-    }
-}
-
 #[cfg(test)]
 mod test {
+    use crate::aabb::AABB;
+
     use super::*;
 
     #[test]
     fn test_aabb_union() {
-        let a = AABB::new(P3::new().z(2.0), V3::new().x(2.0));
-        let b = AABB::new(P3::new(), V3::new().x(1.0));
-        assert_eq!(a.union(&b), AABB::new(P3::new(), V3::new().x(2.0).z(2.0)))
+        let a = AABB::bounding_box([P3::new().z(2.0), P3::new().x(2.0)]);
+        let b = AABB::bounding_box([P3::new(), P3::new().x(1.0)]);
+        assert_eq!(
+            AABB::union([&a, &b]),
+            AABB::bounding_box([P3::new(), P3::new().x(2.0).z(2.0)])
+        )
     }
 
     #[test]
     fn test_ray_aabb_intersection() {
-        let aabb = AABB::new(
+        let aabb = AABB::bounding_box([
             P3::new().x(100.0).y(100.0).z(100.0),
-            V3::new().x(5.0).y(5.0).z(5.0),
-        );
+            P3::new().x(105.0).y(105.0).z(105.0),
+        ]);
         let ray = Ray::new(P3::new().x(101.0).y(101.0), V3::new().z(1.0));
-        assert!(ray.intersects_aabb(&aabb, &Interval::new(0.1, 100.5)));
-        assert!(ray.intersects_aabb(&aabb, &Interval::new(100.4, 100.5)));
-        assert!(!ray.intersects_aabb(&aabb, &Interval::new(0.1, 99.5)));
-        assert!(!ray.intersects_aabb(&aabb, &Interval::new(105.1, 106.0)));
+        assert!(aabb
+            .ray_intersection(&ray, Interval::new(0.1, 100.5))
+            .is_some());
+        assert!(aabb
+            .ray_intersection(&ray, Interval::new(100.4, 100.5))
+            .is_some());
+        assert!(aabb
+            .ray_intersection(&ray, Interval::new(0.1, 99.5))
+            .is_none());
+        assert!(aabb
+            .ray_intersection(&ray, Interval::new(105.1, 106.0))
+            .is_none());
     }
 
     #[test]
     fn test_ray_aabb_intersection_angle() {
         // Diagonal through the AABB is length 1
         let s = (1.0f64 / 3.0).sqrt();
-        let aabb = AABB::new(P3::new(), V3::new().x(s).y(s).z(s));
+        let aabb = AABB::bounding_box([P3::new(), P3::new().x(s).y(s).z(s)]);
         let ray = Ray::new(P3::new().x(-s).y(-s).z(-s), V3::new().x(1.0).y(1.0).z(1.0));
-        assert!(!ray.intersects_aabb(&aabb, &Interval::new(0.1, 0.9)));
-        assert!(ray.intersects_aabb(&aabb, &Interval::new(0.1, 1.1)));
-        assert!(ray.intersects_aabb(&aabb, &Interval::new(0.1, 2.1)));
-        assert!(ray.intersects_aabb(&aabb, &Interval::new(1.1, 2.1)));
-        assert!(!ray.intersects_aabb(&aabb, &Interval::new(2.1, 3.1)));
+        assert!(aabb
+            .ray_intersection(&ray, Interval::new(0.1, 0.9))
+            .is_none());
+        assert!(aabb
+            .ray_intersection(&ray, Interval::new(0.1, 1.1))
+            .is_some());
+        assert!(aabb
+            .ray_intersection(&ray, Interval::new(0.1, 2.1))
+            .is_some());
+        assert!(aabb
+            .ray_intersection(&ray, Interval::new(1.1, 2.1))
+            .is_some());
+        assert!(aabb
+            .ray_intersection(&ray, Interval::new(2.1, 3.1))
+            .is_none());
+    }
+
+    #[test]
+    fn test_ray_aabb_intersection_failure() {
+        let ray = Ray::new(
+            P3::new().x(13.0).y(2.0).z(3.0),
+            V3::new()
+                .x(-0.99999581369879142)
+                .y(-0.0022009767150356608)
+                .z(-0.001878373336654929),
+        );
+        let aabb = AABB::bounding_box([P3::new().x(-5.0).z(-1.0), P3::new().x(5.0).y(2.0).z(1.0)]);
+        let interval = Interval::new(1e-3, f64::INFINITY);
+        let intersection = aabb.ray_intersection(&ray, interval);
+        assert_eq!(intersection, None);
     }
 }

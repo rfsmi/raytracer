@@ -1,6 +1,7 @@
 use crate::{
+    aabb::AABB,
     material::Material,
-    ray::{Interval, Ray, AABB},
+    ray::{Interval, Ray},
     vector::{P3, V3},
 };
 
@@ -25,7 +26,7 @@ impl<'a> HitRecord<'a> {
     }
 
     pub fn ray(&self, direction: V3) -> Ray {
-        Ray::new(self.p + direction * 1e-5, direction)
+        Ray::new(self.p, direction)
     }
 }
 
@@ -36,28 +37,21 @@ pub trait Hit: Sync {
 
 pub struct HitList {
     objects: Vec<Box<dyn Hit>>,
-    aabb: AABB,
+    aabb: AABB, // Maybe don't need this
 }
 
 impl HitList {
-    pub fn new(object: Box<dyn Hit>) -> Self {
+    pub fn new(objects: impl IntoIterator<Item = Box<dyn Hit>>) -> Self {
+        let objects: Vec<_> = objects.into_iter().collect();
         Self {
-            aabb: *object.aabb(),
-            objects: vec![object],
+            aabb: AABB::union(objects.iter().map(|o| o.aabb())),
+            objects,
         }
-    }
-
-    pub fn add(&mut self, object: Box<dyn Hit>) {
-        self.aabb = self.aabb.union(object.aabb());
-        self.objects.push(object);
     }
 }
 
 impl Hit for HitList {
     fn hit(&self, r: &Ray, mut ray_t: Interval) -> Option<HitRecord> {
-        if !r.intersects_aabb(&self.aabb, &ray_t) {
-            return None;
-        }
         self.objects
             .iter()
             .filter_map(move |object| {

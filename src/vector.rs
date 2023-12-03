@@ -136,3 +136,31 @@ impl Neg for V3 {
         Self::new() - self
     }
 }
+
+macro_rules! element_wise_op {
+    (binary $($func:tt)*) => {
+        impl V3 {
+            pub fn $($func)*(&self, other: Self) -> Self {
+                Self::new()
+                    .x(self.x.$($func)*(other.x))
+                    .y(self.y.$($func)*(other.y))
+                    .z(self.z.$($func)*(other.z))
+            }
+        }
+    };
+    ($($func:tt)*) => {
+        impl V3 {
+            pub fn $($func)*(&self) -> Self {
+                Self::new()
+                    .x(self.x.$($func)*())
+                    .y(self.y.$($func)*())
+                    .z(self.z.$($func)*())
+            }
+        }
+    };
+}
+
+element_wise_op!(abs);
+element_wise_op!(signum);
+element_wise_op!(binary min);
+element_wise_op!(binary max);
