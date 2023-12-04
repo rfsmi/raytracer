@@ -35,14 +35,20 @@ impl Axis {
 const PRIMITIVE_TEST_COST: f64 = 1.0;
 const BVH_SPLIT_COST: f64 = 1.0 / 8.0;
 
-pub enum BVH {
-    Internal(AABB, Axis, Box<BVH>, Box<BVH>),
-    Leaf(AABB, Box<dyn Hit>),
+enum Node {
+    ObjectSplit {
+        aabb: AABB,
+        axis: Axis,
+        next_child: usize,
+    },
+    Leaf {
+        aabb: AABB,
+        primitive: Box<dyn Hit>,
+    },
 }
 
-impl BVH {
-    pub fn new(objects: impl IntoIterator<Item = Box<dyn Hit>>) -> Self {
-        let mut primitives: Vec<_> = objects.into_iter().collect();
+impl Node {
+    fn build(mut primitives: Vec<Box<dyn Hit>>, nodes: &mut Vec<Option<Node>>) {
         let bounds = AABB::union(primitives.iter().map(|o| o.aabb()));
 
         if let Some((axis, split_i, cost)) = object_split::find_best(bounds, &primitives) {
@@ -53,49 +59,87 @@ impl BVH {
                         .total_cmp(&axis.p3(b.aabb().centroid().unwrap()))
                 });
                 let rest = primitives.split_off(split_i);
-                return Self::internal(bounds, axis, primitives, rest);
+                return Self::object_split(bounds, axis, primitives, rest, nodes);
             }
         };
 
         // Otherwise this is just a leaf node
-        Self::leaf(bounds, primitives)
+        Self::leaf(bounds, primitives, nodes);
     }
 
-    fn leaf(aabb: AABB, primitives: Vec<Box<dyn Hit>>) -> Self {
-        Self::Leaf(aabb, Box::new(HitList::new(primitives)))
+    fn leaf(aabb: AABB, mut primitives: Vec<Box<dyn Hit>>, nodes: &mut Vec<Option<Node>>) {
+        let primitive = if primitives.len() > 1 {
+            Box::new(HitList::new(primitives))
+        } else {
+            primitives.remove(0)
+        };
+        nodes.push(Some(Node::Leaf { aabb, primitive }));
     }
 
-    fn internal(aabb: AABB, axis: Axis, a: Vec<Box<dyn Hit>>, b: Vec<Box<dyn Hit>>) -> Self {
-        Self::Internal(aabb, axis, Box::new(Self::new(a)), Box::new(Self::new(b)))
+    fn object_split(
+        aabb: AABB,
+        axis: Axis,
+        a: Vec<Box<dyn Hit>>,
+        b: Vec<Box<dyn Hit>>,
+        nodes: &mut Vec<Option<Node>>,
+    ) {
+        let i = nodes.len();
+        nodes.push(None);
+        Self::build(a, nodes);
+        nodes[i] = Some(Node::ObjectSplit {
+            axis,
+            aabb,
+            next_child: nodes.len(),
+        });
+        Self::build(b, nodes);
+    }
+
+    fn aabb(&self) -> &AABB {
+        match self {
+            Node::ObjectSplit { aabb, .. } => aabb,
+            Node::Leaf { aabb, .. } => aabb,
+        }
+    }
+}
+
+pub struct BVH {
+    nodes: Vec<Node>,
+}
+
+impl BVH {
+    pub fn new(primitives: impl IntoIterator<Item = Box<dyn Hit>>) -> Self {
+        let mut nodes = Vec::new();
+        Node::build(primitives.into_iter().collect(), &mut nodes);
+        Self {
+            nodes: nodes.into_iter().map(Option::unwrap).collect(),
+        }
     }
 }
 
 impl Hit for BVH {
-    fn aabb(&self) -> &AABB {
-        match self {
-            BVH::Internal(aabb, ..) => aabb,
-            BVH::Leaf(aabb, ..) => aabb,
-        }
-    }
-
     fn hit<'a>(&'a self, r: &Ray, mut ray_t: Interval) -> Option<HitRecord<'a>> {
-        let mut stack = vec![self];
+        if self.nodes.is_empty() {
+            return None;
+        }
+        let mut stack = vec![0];
         let mut best_hr = None;
-        while let Some(bvh) = stack.pop() {
-            if bvh.aabb().ray_intersection(r, ray_t).is_none() {
+        while let Some(i) = stack.pop() {
+            let node = &self.nodes[i];
+            if node.aabb().ray_intersection(r, ray_t).is_none() {
                 continue;
             }
 
-            match bvh {
-                BVH::Internal(.., axis, a, b) => {
-                    let next = if axis.v3(r.direction).is_sign_negative() {
-                        [&**a, &**b]
+            match node {
+                Node::ObjectSplit {
+                    axis, next_child, ..
+                } => {
+                    stack.extend(if axis.v3(r.direction).is_sign_negative() {
+                        [i + 1, *next_child]
                     } else {
-                        [&**b, &**a]
-                    };
-                    stack.extend(next);
+                        [*next_child, i + 1]
+                    });
                 }
-                BVH::Leaf(.., primitive) => {
+                Node::Leaf { primitive, .. } => {
                     if let Some(hr) = primitive.hit(r, ray_t) {
                         ray_t.max = hr.t;
                         best_hr = Some(hr);
@@ -104,6 +148,14 @@ impl Hit for BVH {
             }
         }
         best_hr
+    }
+
+    fn aabb(&self) -> AABB {
+        if self.nodes.len() == 0 {
+            AABB::Empty
+        } else {
+            *self.nodes[0].aabb()
+        }
     }
 }
 
@@ -126,7 +178,7 @@ mod object_split {
             }
         }
 
-        fn add(&mut self, aabb: &AABB) {
+        fn add(&mut self, aabb: AABB) {
             self.count += 1;
             self.aabb.extend(aabb);
         }
@@ -135,7 +187,7 @@ mod object_split {
     fn combine_buckets<'a>(buckets: impl IntoIterator<Item = &'a Bucket>) -> Bucket {
         buckets.into_iter().fold(Bucket::new(), |a, b| Bucket {
             count: a.count + b.count,
-            aabb: AABB::union([&a.aabb, &b.aabb]),
+            aabb: AABB::union([a.aabb, b.aabb]),
         })
     }
 

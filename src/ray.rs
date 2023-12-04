@@ -52,7 +52,7 @@ mod test {
         let a = AABB::bounding_box([P3::new().z(2.0), P3::new().x(2.0)]);
         let b = AABB::bounding_box([P3::new(), P3::new().x(1.0)]);
         assert_eq!(
-            AABB::union([&a, &b]),
+            AABB::union([a, b]),
             AABB::bounding_box([P3::new(), P3::new().x(2.0).z(2.0)])
         )
     }

@@ -51,8 +51,8 @@ impl AABB {
         }
     }
 
-    pub fn extend(&mut self, other: &Self) {
-        *self = Self::union([self, other]);
+    pub fn extend(&mut self, other: Self) {
+        *self = Self::union([*self, other]);
     }
 
     pub fn bounding_box(points: impl IntoIterator<Item = P3>) -> Self {
@@ -75,8 +75,8 @@ impl AABB {
         Self::NonEmpty { min, max }
     }
 
-    pub fn union<'a>(aabbs: impl IntoIterator<Item = &'a Self>) -> Self {
-        aabbs.into_iter().copied().fold(Self::Empty, |a, b| {
+    pub fn union(aabbs: impl IntoIterator<Item = Self>) -> Self {
+        aabbs.into_iter().fold(Self::Empty, |a, b| {
             let Self::NonEmpty {
                 min: a_min,
                 max: a_max,

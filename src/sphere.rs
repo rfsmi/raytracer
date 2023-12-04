@@ -12,7 +12,6 @@ pub struct Sphere {
     center: P3,
     radius: f64,
     material: Arc<dyn Material>,
-    aabb: AABB,
 }
 
 impl Sphere {
@@ -21,7 +20,6 @@ impl Sphere {
             center,
             radius,
             material,
-            aabb: AABB::bounding_box([center - radius, center + radius]),
         }
     }
 }
@@ -48,7 +46,7 @@ impl Hit for Sphere {
         Some(HitRecord::new(r, p, t, outward_normal, &*self.material))
     }
 
-    fn aabb(&self) -> &AABB {
-        &self.aabb
+    fn aabb(&self) -> AABB {
+        AABB::bounding_box([self.center - self.radius, self.center + self.radius])
     }
 }

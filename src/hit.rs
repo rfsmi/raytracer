@@ -31,22 +31,18 @@ impl<'a> HitRecord<'a> {
 }
 
 pub trait Hit: Sync {
-    fn aabb(&self) -> &AABB;
+    fn aabb(&self) -> AABB;
     fn hit<'a>(&'a self, r: &Ray, ray_t: Interval) -> Option<HitRecord<'a>>;
 }
 
 pub struct HitList {
     objects: Vec<Box<dyn Hit>>,
-    aabb: AABB, // Maybe don't need this
 }
 
 impl HitList {
     pub fn new(objects: impl IntoIterator<Item = Box<dyn Hit>>) -> Self {
         let objects: Vec<_> = objects.into_iter().collect();
-        Self {
-            aabb: AABB::union(objects.iter().map(|o| o.aabb())),
-            objects,
-        }
+        Self { objects }
     }
 }
 
@@ -62,7 +58,7 @@ impl Hit for HitList {
             .last()
     }
 
-    fn aabb(&self) -> &AABB {
-        &self.aabb
+    fn aabb(&self) -> AABB {
+        AABB::union(self.objects.iter().map(|o| o.aabb()))
     }
 }
