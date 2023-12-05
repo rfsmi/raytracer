@@ -34,31 +34,3 @@ pub trait Hit: Sync {
     fn aabb(&self) -> AABB;
     fn hit<'a>(&'a self, r: &Ray, ray_t: Interval) -> Option<HitRecord<'a>>;
 }
-
-pub struct HitList {
-    objects: Vec<Box<dyn Hit>>,
-}
-
-impl HitList {
-    pub fn new(objects: impl IntoIterator<Item = Box<dyn Hit>>) -> Self {
-        let objects: Vec<_> = objects.into_iter().collect();
-        Self { objects }
-    }
-}
-
-impl Hit for HitList {
-    fn hit(&self, r: &Ray, mut ray_t: Interval) -> Option<HitRecord> {
-        self.objects
-            .iter()
-            .filter_map(move |object| {
-                let hr = object.hit(r, ray_t)?;
-                ray_t.max = hr.t;
-                Some(hr)
-            })
-            .last()
-    }
-
-    fn aabb(&self) -> AABB {
-        AABB::union(self.objects.iter().map(|o| o.aabb()))
-    }
-}

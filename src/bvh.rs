@@ -1,6 +1,6 @@
 use crate::{
     aabb::AABB,
-    hit::{Hit, HitList, HitRecord},
+    hit::{Hit, HitRecord},
     ray::{Interval, Ray},
     vector::{P3, V3},
 };
@@ -36,62 +36,47 @@ const PRIMITIVE_TEST_COST: f64 = 1.0;
 const BVH_SPLIT_COST: f64 = 1.0 / 8.0;
 
 enum Node {
-    ObjectSplit {
-        aabb: AABB,
-        axis: Axis,
-        next_child: usize,
-    },
-    Leaf {
-        aabb: AABB,
-        primitive: Box<dyn Hit>,
-    },
+    ObjectSplit { aabb: AABB, axis: Axis, skip: usize },
+    Leaf { aabb: AABB, indices: Vec<usize> },
 }
 
 impl Node {
-    fn build(mut primitives: Vec<Box<dyn Hit>>, nodes: &mut Vec<Option<Node>>) {
-        let bounds = AABB::union(primitives.iter().map(|o| o.aabb()));
+    fn build(primitives: &[Box<dyn Hit>], mut indices: Vec<usize>) -> Vec<Node> {
+        let current_primitives = indices.iter().map(|&i| &primitives[i]);
+        let aabb = AABB::union(current_primitives.clone().map(|o| o.aabb()));
 
-        if let Some((axis, split_i, cost)) = object_split::find_best(bounds, &primitives) {
+        if let Some((axis, split_i, cost)) = object_split::find_best(aabb, current_primitives) {
             // Split if we must, or the cost is low enough
-            if cost < PRIMITIVE_TEST_COST * primitives.len() as f64 {
-                primitives.sort_by(|a, b| {
-                    axis.p3(a.aabb().centroid().unwrap())
-                        .total_cmp(&axis.p3(b.aabb().centroid().unwrap()))
+            if cost < PRIMITIVE_TEST_COST * indices.len() as f64 {
+                indices.sort_by(|&a, &b| {
+                    axis.p3(primitives[a].aabb().centroid().unwrap())
+                        .total_cmp(&axis.p3(primitives[b].aabb().centroid().unwrap()))
                 });
-                let rest = primitives.split_off(split_i);
-                return Self::object_split(bounds, axis, primitives, rest, nodes);
+                let rest = indices.split_off(split_i);
+                return Self::object_split(aabb, axis, primitives, indices, rest);
             }
         };
 
         // Otherwise this is just a leaf node
-        Self::leaf(bounds, primitives, nodes);
-    }
-
-    fn leaf(aabb: AABB, mut primitives: Vec<Box<dyn Hit>>, nodes: &mut Vec<Option<Node>>) {
-        let primitive = if primitives.len() > 1 {
-            Box::new(HitList::new(primitives))
-        } else {
-            primitives.remove(0)
-        };
-        nodes.push(Some(Node::Leaf { aabb, primitive }));
+        vec![Self::Leaf { aabb, indices }]
     }
 
     fn object_split(
         aabb: AABB,
         axis: Axis,
-        a: Vec<Box<dyn Hit>>,
-        b: Vec<Box<dyn Hit>>,
-        nodes: &mut Vec<Option<Node>>,
-    ) {
-        let i = nodes.len();
-        nodes.push(None);
-        Self::build(a, nodes);
-        nodes[i] = Some(Node::ObjectSplit {
+        primitives: &[Box<dyn Hit>],
+        a: Vec<usize>,
+        b: Vec<usize>,
+    ) -> Vec<Node> {
+        let mut nodes = Self::build(primitives, a);
+        let parent = Node::ObjectSplit {
             axis,
             aabb,
-            next_child: nodes.len(),
-        });
-        Self::build(b, nodes);
+            skip: nodes.len() + 1,
+        };
+        nodes.insert(0, parent);
+        nodes.extend(Self::build(primitives, b));
+        nodes
     }
 
     fn aabb(&self) -> &AABB {
@@ -104,14 +89,15 @@ impl Node {
 
 pub struct BVH {
     nodes: Vec<Node>,
+    primitives: Vec<Box<dyn Hit>>,
 }
 
 impl BVH {
     pub fn new(primitives: impl IntoIterator<Item = Box<dyn Hit>>) -> Self {
-        let mut nodes = Vec::new();
-        Node::build(primitives.into_iter().collect(), &mut nodes);
+        let primitives: Vec<_> = primitives.into_iter().collect();
         Self {
-            nodes: nodes.into_iter().map(Option::unwrap).collect(),
+            nodes: Node::build(&primitives, (0..primitives.len()).collect()),
+            primitives,
         }
     }
 }
@@ -130,20 +116,23 @@ impl Hit for BVH {
             }
 
             match node {
-                Node::ObjectSplit {
-                    axis, next_child, ..
-                } => {
+                Node::ObjectSplit { axis, skip, .. } => {
                     stack.extend(if axis.v3(r.direction).is_sign_negative() {
-                        [i + 1, *next_child]
+                        [i + 1, i + skip]
                     } else {
-                        [*next_child, i + 1]
+                        [i + skip, i + 1]
                     });
                 }
-                Node::Leaf { primitive, .. } => {
-                    if let Some(hr) = primitive.hit(r, ray_t) {
-                        ray_t.max = hr.t;
-                        best_hr = Some(hr);
-                    }
+                Node::Leaf { indices, .. } => {
+                    best_hr = indices
+                        .iter()
+                        .filter_map(|&i| {
+                            let hr = self.primitives[i].hit(r, ray_t)?;
+                            ray_t.max = hr.t;
+                            Some(hr)
+                        })
+                        .last()
+                        .or(best_hr);
                 }
             }
         }
@@ -191,8 +180,11 @@ mod object_split {
         })
     }
 
-    pub fn find_best(bounds: AABB, primitives: &[Box<dyn Hit>]) -> Option<(Axis, usize, f64)> {
-        let centroids = primitives.iter().filter_map(|o| o.aabb().centroid());
+    pub fn find_best<'a>(
+        bounds: AABB,
+        primitives: impl Iterator<Item = &'a Box<dyn Hit>> + Clone,
+    ) -> Option<(Axis, usize, f64)> {
+        let centroids = primitives.clone().filter_map(|o| o.aabb().centroid());
         let centroid_bounds = AABB::bounding_box(centroids);
         Axis::ALL
             .iter()
@@ -203,7 +195,7 @@ mod object_split {
                 let mut buckets = [Bucket::new(); N_BUCKETS];
                 let bounds_min = axis.p3(centroid_bounds.min().unwrap());
                 let bounds_max = axis.p3(centroid_bounds.max().unwrap());
-                for primitive in primitives {
+                for primitive in primitives.clone() {
                     let centroid = axis.p3(primitive.aabb().centroid().unwrap());
                     let f = (centroid - bounds_min) / (bounds_max - bounds_min);
                     let mut i = (N_BUCKETS as f64 * f) as usize;
