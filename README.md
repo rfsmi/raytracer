@@ -24,5 +24,5 @@ References
 ----------
 
 <a id="1">[1]</a>https://raytracing.github.io/books/RayTracingInOneWeekend.html  
-<a id="2">[2]</a>https://www.nvidia.in/docs/IO/77714/sbvh.pdf
+<a id="2">[2]</a>https://www.nvidia.in/docs/IO/77714/sbvh.pdf  
 <a id="3">[2]</a>https://en.wikipedia.org/wiki/Netpbm
