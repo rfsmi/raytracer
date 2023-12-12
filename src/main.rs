@@ -82,7 +82,7 @@ fn main() {
 
     let config = Config::new()
         .aspect_ratio(16.0 / 9.0)
-        .image_width(600)
+        .image_width(830)
         .vfov(20.0)
         .lookfrom(P3::new().x(13.0).y(2.0).z(3.0))
         .lookat(P3::new())
