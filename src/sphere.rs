@@ -80,7 +80,6 @@ impl Hit for Sphere {
         if x.abs() >= self.radius {
             // Sphere lies entirely on one side of plane.
             let big = if x < 0.0 { &mut rhs.min } else { &mut lhs.max };
-            big.axis_mut()
         } else {
             // Plane intersects sphere
             // let mut lhs = aabb;
