@@ -2,10 +2,15 @@ use crate::{
     aabb::AABB,
     hit::{Hit, HitRecord},
     ray::{Interval, Ray},
-    vector::{P3, V3},
 };
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq)]
+pub struct Plane {
+    pub axis: Axis,
+    pub pos: f64,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Axis {
     X,
     Y,
@@ -13,23 +18,7 @@ pub enum Axis {
 }
 
 impl Axis {
-    const ALL: &'static [Axis] = &[Axis::X, Axis::Y, Axis::Z];
-
-    fn v3(self, v: V3) -> f64 {
-        match self {
-            Axis::X => v.x,
-            Axis::Y => v.y,
-            Axis::Z => v.z,
-        }
-    }
-
-    fn p3(self, p: P3) -> f64 {
-        match self {
-            Axis::X => p.x,
-            Axis::Y => p.y,
-            Axis::Z => p.z,
-        }
-    }
+    pub const ALL: &'static [Axis] = &[Axis::X, Axis::Y, Axis::Z];
 }
 
 const PRIMITIVE_TEST_COST: f64 = 1.0;
@@ -49,8 +38,11 @@ impl Node {
             // Split if we must, or the cost is low enough
             if cost < PRIMITIVE_TEST_COST * indices.len() as f64 {
                 indices.sort_by(|&a, &b| {
-                    axis.p3(primitives[a].aabb().centroid().unwrap())
-                        .total_cmp(&axis.p3(primitives[b].aabb().centroid().unwrap()))
+                    primitives[a]
+                        .aabb()
+                        .centroid()
+                        .axis(axis)
+                        .total_cmp(&primitives[b].aabb().centroid().axis(axis))
                 });
                 let rest = indices.split_off(split_i);
                 return Self::object_split(aabb, axis, primitives, indices, rest);
@@ -100,10 +92,8 @@ impl BVH {
             primitives,
         }
     }
-}
 
-impl Hit for BVH {
-    fn hit<'a>(&'a self, r: &Ray, mut ray_t: Interval) -> Option<HitRecord<'a>> {
+    pub fn hit<'a>(&'a self, r: &Ray, mut ray_t: Interval) -> Option<HitRecord<'a>> {
         if self.nodes.is_empty() {
             return None;
         }
@@ -117,7 +107,7 @@ impl Hit for BVH {
 
             match node {
                 Node::ObjectSplit { axis, skip, .. } => {
-                    stack.extend(if axis.v3(r.direction).is_sign_negative() {
+                    stack.extend(if r.direction.axis(*axis) < &0.0 {
                         [i + 1, i + skip]
                     } else {
                         [i + skip, i + 1]
@@ -137,14 +127,6 @@ impl Hit for BVH {
             }
         }
         best_hr
-    }
-
-    fn aabb(&self) -> AABB {
-        if self.nodes.len() == 0 {
-            AABB::Empty
-        } else {
-            *self.nodes[0].aabb()
-        }
     }
 }
 
@@ -184,19 +166,19 @@ mod object_split {
         bounds: AABB,
         primitives: impl Iterator<Item = &'a Box<dyn Hit>> + Clone,
     ) -> Option<(Axis, usize, f64)> {
-        let centroids = primitives.clone().filter_map(|o| o.aabb().centroid());
+        let centroids = primitives.clone().map(|o| o.aabb().centroid());
         let centroid_bounds = AABB::bounding_box(centroids);
         Axis::ALL
             .iter()
             // All centroids are at the same point
-            .filter(|axis| axis.v3(centroid_bounds.size()) > 0.0)
+            .filter(|&&axis| centroid_bounds.size().axis(axis) > &0.0)
             .flat_map(move |&axis| {
                 // Assign each primitive to its bucket
                 let mut buckets = [Bucket::new(); N_BUCKETS];
-                let bounds_min = axis.p3(centroid_bounds.min().unwrap());
-                let bounds_max = axis.p3(centroid_bounds.max().unwrap());
+                let bounds_min = *centroid_bounds.min.axis(axis);
+                let bounds_max = *centroid_bounds.max.axis(axis);
                 for primitive in primitives.clone() {
-                    let centroid = axis.p3(primitive.aabb().centroid().unwrap());
+                    let centroid = *primitive.aabb().centroid().axis(axis);
                     let f = (centroid - bounds_min) / (bounds_max - bounds_min);
                     let mut i = (N_BUCKETS as f64 * f) as usize;
                     if i == N_BUCKETS {

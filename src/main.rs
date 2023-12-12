@@ -28,7 +28,7 @@ macro_rules! make {
     (Dielectric ir( $ir:expr )) => {
         Arc::new(Dielectric::new().ir($ir)) as Arc<dyn Material>
     };
-    (sphere $r:expr,  ($x:expr, $y:expr, $z:expr), $material:ident) => {
+    (sphere $r:expr, ($x:expr, $y:expr, $z:expr), $material:ident) => {
         Box::new(Sphere::new(
             P3::new().x($x).y($y).z($z),
             $r,
@@ -89,7 +89,7 @@ fn main() {
         .vup(V3::new().y(1.0))
         .defocus_angle(0.6)
         .focus_dist(10.0)
-        .samples_per_pixel(500)
+        .samples_per_pixel(50)
         .max_depth(50);
 
     config.camera().render(&world);

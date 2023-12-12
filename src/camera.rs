@@ -3,6 +3,7 @@ use std::{collections::HashMap, time::Instant};
 use indicatif::*;
 
 use crate::{
+    bvh::BVH,
     hit::Hit,
     ray::{Interval, Ray},
     util::default_struct,
@@ -97,11 +98,11 @@ fn write_colour(colour: &V3, samples_per_pixel: usize) {
 }
 
 impl Camera {
-    pub fn ray_colour(&self, world: &dyn Hit, r: &Ray, depth: usize) -> V3 {
+    pub fn ray_colour(&self, bvh: &BVH, r: &Ray, depth: usize) -> V3 {
         if depth == 0 {
             return V3::new();
         }
-        let Some(hr) = world.hit(r, Interval::new(1e-3, f64::INFINITY)) else {
+        let Some(hr) = bvh.hit(r, Interval::new(1e-3, f64::INFINITY)) else {
             // Blue sky
             let unit_direction = r.direction.unit();
             let a = (unit_direction.y + 1.0) / 2.0;
@@ -110,7 +111,7 @@ impl Camera {
         let Some((attenuation, scattered)) = hr.material.scatter(r, &hr) else {
             return V3::new();
         };
-        attenuation * self.ray_colour(world, &scattered, depth - 1)
+        attenuation * self.ray_colour(bvh, &scattered, depth - 1)
     }
 
     fn pixel_sample_square(&self) -> V3 {
@@ -137,7 +138,7 @@ impl Camera {
         Ray::new(ray_origin, ray_direction)
     }
 
-    pub fn render(&self, world: &dyn Hit) {
+    pub fn render(&self, bvh: &BVH) {
         println!("P3\n{} {}\n255", self.config.image_width, self.image_height);
         let start = Instant::now();
         let image: HashMap<_, _> = (0..self.image_height)
@@ -148,7 +149,7 @@ impl Camera {
                     .into_par_iter()
                     .map(|_| {
                         let r = self.get_ray(i, j);
-                        self.ray_colour(world, &r, self.config.max_depth)
+                        self.ray_colour(bvh, &r, self.config.max_depth)
                     })
                     .reduce(V3::new, |a, b| a + b);
                 ((i, j), colour)

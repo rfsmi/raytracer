@@ -1,5 +1,6 @@
 use crate::{
     aabb::AABB,
+    bvh::Plane,
     material::Material,
     ray::{Interval, Ray},
     vector::{P3, V3},
@@ -33,4 +34,5 @@ impl<'a> HitRecord<'a> {
 pub trait Hit: Sync {
     fn aabb(&self) -> AABB;
     fn hit<'a>(&'a self, r: &Ray, ray_t: Interval) -> Option<HitRecord<'a>>;
+    fn split_aabb(&self, plane: Plane) -> (AABB, AABB);
 }
