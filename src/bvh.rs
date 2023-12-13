@@ -2,23 +2,13 @@ use crate::{
     aabb::AABB,
     hit::{Hit, HitRecord},
     ray::{Interval, Ray},
+    vector::Axis,
 };
 
 #[derive(Clone, Copy, PartialEq)]
 pub struct Plane {
     pub axis: Axis,
     pub pos: f64,
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub enum Axis {
-    X,
-    Y,
-    Z,
-}
-
-impl Axis {
-    pub const ALL: &'static [Axis] = &[Axis::X, Axis::Y, Axis::Z];
 }
 
 const PRIMITIVE_TEST_COST: f64 = 1.0;
@@ -151,7 +141,7 @@ mod object_split {
 
         fn add(&mut self, aabb: AABB) {
             self.count += 1;
-            self.aabb.extend(aabb);
+            self.aabb.update(aabb);
         }
     }
 
@@ -168,11 +158,10 @@ mod object_split {
     ) -> Option<(Axis, usize, f64)> {
         let centroids = primitives.clone().map(|o| o.aabb().centroid());
         let centroid_bounds = AABB::bounding_box(centroids);
-        Axis::ALL
-            .iter()
+        Axis::all()
             // All centroids are at the same point
-            .filter(|&&axis| centroid_bounds.size().axis(axis) > &0.0)
-            .flat_map(move |&axis| {
+            .filter(|axis| (centroid_bounds.size() * axis).length_squared() > 0.0)
+            .flat_map(move |axis| {
                 // Assign each primitive to its bucket
                 let mut buckets = [Bucket::new(); N_BUCKETS];
                 let bounds_min = *centroid_bounds.min.axis(axis);

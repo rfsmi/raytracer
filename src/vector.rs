@@ -3,7 +3,6 @@ use paste::paste;
 use rand::{distributions::uniform::SampleRange, random, Rng};
 use std::ops::*;
 
-use crate::bvh::Axis;
 use crate::util::*;
 
 default_struct!(P3 {
@@ -17,6 +16,20 @@ default_struct!(V3 {
     y: f64 = 0.0,
     z: f64 = 0.0,
 });
+
+#[derive(Clone, Copy, PartialEq)]
+pub struct Axis {
+    x: f64,
+    y: f64,
+    z: f64,
+}
+
+define_ops!((Axis) (*) (P3) -> (V3));
+define_ops!((Axis) (*) (V3) -> (V3));
+define_ops!((P3) (*) (Axis) -> (V3));
+define_ops!((V3) (*) (Axis) -> (V3));
+define_ops!((Axis) (*) (f64) -> (V3));
+define_ops!((f64) (*) (Axis) -> (V3));
 
 define_ops!((V3) (+*-/) = (V3));
 define_ops!((V3) (+*-/) = (f64));
@@ -40,18 +53,26 @@ macro_rules! utility_funcs {
             }
 
             pub fn axis(&self, axis: Axis) -> &f64 {
-                match axis {
-                    Axis::X => &self.x,
-                    Axis::Y => &self.y,
-                    Axis::Z => &self.z,
+                if axis.x == 1.0 {
+                    &self.x
+                } else if axis.y == 1.0 {
+                    &self.y
+                } else if axis.z == 1.0 {
+                    &self.z
+                } else {
+                    unreachable!()
                 }
             }
 
             pub fn axis_mut(&mut self, axis: Axis) -> &mut f64 {
-                match axis {
-                    Axis::X => &mut self.x,
-                    Axis::Y => &mut self.y,
-                    Axis::Z => &mut self.z,
+                if axis.x == 1.0 {
+                    &mut self.x
+                } else if axis.y == 1.0 {
+                    &mut self.y
+                } else if axis.z == 1.0 {
+                    &mut self.z
+                } else {
+                    unreachable!()
                 }
             }
 
@@ -84,6 +105,64 @@ macro_rules! utility_funcs {
 
 utility_funcs!(P3);
 utility_funcs!(V3);
+
+impl Axis {
+    pub const X: Self = Self {
+        x: 1.0,
+        y: 0.0,
+        z: 0.0,
+    };
+    pub const Y: Self = Self {
+        x: 0.0,
+        y: 1.0,
+        z: 0.0,
+    };
+    pub const Z: Self = Self {
+        x: 0.0,
+        y: 0.0,
+        z: 1.0,
+    };
+
+    pub fn others(&self) -> V3 {
+        if self.x == 1.0 {
+            V3 {
+                x: 0.0,
+                y: 1.0,
+                z: 1.0,
+            }
+        } else if self.y == 1.0 {
+            V3 {
+                x: 1.0,
+                y: 0.0,
+                z: 1.0,
+            }
+        } else if self.z == 1.0 {
+            V3 {
+                x: 1.0,
+                y: 1.0,
+                z: 0.0,
+            }
+        } else {
+            unreachable!()
+        }
+    }
+
+    pub fn value(&self, v: V3) -> f64 {
+        if self.x == 1.0 {
+            v.x
+        } else if self.y == 1.0 {
+            v.y
+        } else if self.z == 1.0 {
+            v.z
+        } else {
+            unreachable!()
+        }
+    }
+
+    pub fn all() -> impl Iterator<Item = Self> {
+        [Self::X, Self::Y, Self::Z].into_iter()
+    }
+}
 
 impl V3 {
     pub fn length_squared(&self) -> f64 {

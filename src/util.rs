@@ -38,23 +38,17 @@ macro_rules! binary_op {
     ([$($a:tt)*] [$($b:tt)*] [$($c:tt)*] [$($types:tt)*] -> $($rest:tt)*) => {
         binary_op!([$($a)*] [$($b)*] [$($c)*] [$($types)*] $($rest)*);
     };
-    ([$($a:tt)*] [$($b:tt)*] [$($c:tt)*] [$($types:tt)*] (P3) $($rest:tt)*) => {
-        binary_op!([$($a)* (.x)] [$($b)* (.y)] [$($c)* (.z)] [$($types)* (P3)] $($rest)*);
-    };
-    ([$($a:tt)*] [$($b:tt)*] [$($c:tt)*] [$($types:tt)*] (&P3) $($rest:tt)*) => {
-        binary_op!([$($a)* (.x)] [$($b)* (.y)] [$($c)* (.z)] [$($types)* (&P3)] $($rest)*);
-    };
-    ([$($a:tt)*] [$($b:tt)*] [$($c:tt)*] [$($types:tt)*] (V3) $($rest:tt)*) => {
-        binary_op!([$($a)* (.x)] [$($b)* (.y)] [$($c)* (.z)] [$($types)* (V3)] $($rest)*);
-    };
-    ([$($a:tt)*] [$($b:tt)*] [$($c:tt)*] [$($types:tt)*] (&V3) $($rest:tt)*) => {
-        binary_op!([$($a)* (.x)] [$($b)* (.y)] [$($c)* (.z)] [$($types)* (&V3)] $($rest)*);
-    };
     ([$($a:tt)*] [$($b:tt)*] [$($c:tt)*] [$($types:tt)*] (f64) $($rest:tt)*) => {
         binary_op!([$($a)* ()] [$($b)* ()] [$($c)* ()] [$($types)* (f64)] $($rest)*);
     };
     ([$($a:tt)*] [$($b:tt)*] [$($c:tt)*] [$($types:tt)*] (&f64) $($rest:tt)*) => {
         binary_op!([$($a)* ()] [$($b)* ()] [$($c)* ()] [$($types)* (&f64)] $($rest)*);
+    };
+    ([$($a:tt)*] [$($b:tt)*] [$($c:tt)*] [$($types:tt)*] ($type:ty) $($rest:tt)*) => {
+        binary_op!([$($a)* (.x)] [$($b)* (.y)] [$($c)* (.z)] [$($types)* ($type)] $($rest)*);
+    };
+    ([$($a:tt)*] [$($b:tt)*] [$($c:tt)*] [$($types:tt)*] (& $type:ty) $($rest:tt)*) => {
+        binary_op!([$($a)* (.x)] [$($b)* (.y)] [$($c)* (.z)] [$($types)* (&$type)] $($rest)*);
     };
     (
         [($($a1:tt)*) ($($a2:tt)*) ($($a3:tt)*)] [($($b1:tt)*) ($($b2:tt)*) ($($b3:tt)*)] [($($c1:tt)*) ($($c2:tt)*) ($($c3:tt)*)]

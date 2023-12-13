@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use crate::{
     aabb::AABB,
-    bvh::{Axis, Plane},
+    bvh::Plane,
     hit::{Hit, HitRecord},
     material::Material,
     ray::{Interval, Ray},
@@ -52,40 +52,85 @@ impl Hit for Sphere {
     }
 
     fn split_aabb(&self, plane: Plane) -> (AABB, AABB) {
-        let aabb = self.aabb();
-
-        let mut lhs = aabb;
-        let mut rhs = aabb;
-        *lhs.max.axis_mut(plane.axis) = plane.pos;
-        *rhs.min.axis_mut(plane.axis) = plane.pos;
-        lhs = AABB::intersection([aabb, lhs]);
-        rhs = AABB::intersection([aabb, rhs]);
-
-        let x = plane.pos - self.center.axis(plane.axis);
-        if x.abs() > self.radius {
-            let sign = x.signum();
-            let y = (self.radius * self.radius - x * x).sqrt();
-            let mut split_plane = AABB::new();
-            for &axis in Axis::ALL {
-                let (max, min) = if axis == plane.axis {
-                    (plane.pos, plane.pos)
-                } else {
-                    (y, -y)
-                };
-                *split_plane.min.axis_mut(axis) = min;
-                *split_plane.max.axis_mut(axis) = max;
-            }
+        let d = (plane.pos - self.center) * plane.axis;
+        let mut h = (self.radius * self.radius - d.length_squared()).sqrt();
+        if h.is_nan() {
+            h = -self.radius;
         }
-
-        if x.abs() >= self.radius {
-            // Sphere lies entirely on one side of plane.
-            let big = if x < 0.0 { &mut rhs.min } else { &mut lhs.max };
+        let mut lhs = AABB {
+            min: self.center - plane.axis * self.radius - plane.axis.others() * h,
+            max: self.center + d + plane.axis.others() * h,
+        };
+        let mut rhs = AABB {
+            min: self.center + d - plane.axis.others() * h,
+            max: self.center + plane.axis * self.radius + plane.axis.others() * h,
+        };
+        let center_box = AABB::bounding_box([
+            self.center - plane.axis.others() * self.radius,
+            self.center + plane.axis.others() * self.radius,
+        ]);
+        if plane.axis.value(d) < 0.0 {
+            rhs.update(center_box);
         } else {
-            // Plane intersects sphere
-            // let mut lhs = aabb;
-            // plane.axis.get_v3_mut(&mut lhs.min) =
-            // let big = AABB::bounding_box([points])
+            lhs.update(center_box);
         }
-        (lhs, rhs)
+        let aabb = self.aabb();
+        (
+            AABB::intersection([aabb, lhs]),
+            AABB::intersection([aabb, rhs]),
+        )
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::{material::Lambertian, vector::Axis};
+
+    use super::*;
+
+    #[test]
+    fn test_split_aabb() {
+        let sphere = Sphere::new(P3::new(), 5.0, Arc::new(Lambertian::new()));
+        assert_eq!(
+            sphere.aabb(),
+            AABB {
+                min: P3::all(-5.0),
+                max: P3::all(5.0)
+            }
+        );
+
+        // Split inside the sphere
+        assert_eq!(
+            sphere.split_aabb(Plane {
+                axis: Axis::X,
+                pos: 3.0
+            }),
+            (
+                AABB {
+                    min: P3::all(-5.0),
+                    max: P3::all(5.0).x(3.0)
+                },
+                AABB {
+                    min: P3::all(-4.0).x(3.0),
+                    max: P3::all(4.0).x(5.0)
+                }
+            )
+        );
+
+        // Split to the right of the sphere
+        let (lhs, rhs) = sphere.split_aabb(Plane {
+            axis: Axis::X,
+            pos: 5.1,
+        });
+        assert_eq!(lhs, sphere.aabb());
+        assert!(rhs.is_empty());
+
+        // Split to the left of the sphere
+        let (lhs, rhs) = sphere.split_aabb(Plane {
+            axis: Axis::X,
+            pos: -5.1,
+        });
+        assert!(lhs.is_empty());
+        assert_eq!(rhs, sphere.aabb());
     }
 }

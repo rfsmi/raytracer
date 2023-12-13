@@ -4,7 +4,6 @@ use indicatif::*;
 
 use crate::{
     bvh::BVH,
-    hit::Hit,
     ray::{Interval, Ray},
     util::default_struct,
     vector::{P3, V3},

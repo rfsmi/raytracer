@@ -1,7 +1,6 @@
 use crate::{
-    bvh::Axis,
     ray::{Interval, Ray},
-    vector::{P3, V3},
+    vector::{Axis, P3, V3},
 };
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -19,9 +18,7 @@ impl AABB {
     }
 
     pub fn is_empty(&self) -> bool {
-        Axis::ALL
-            .iter()
-            .any(|&axis| self.min.axis(axis) > self.max.axis(axis))
+        Axis::all().any(|axis| self.min.axis(axis) > self.max.axis(axis))
     }
 
     pub fn centroid(&self) -> P3 {
@@ -37,7 +34,7 @@ impl AABB {
         2.0 * (x * y + x * z + z * y)
     }
 
-    pub fn extend(&mut self, other: Self) {
+    pub fn update(&mut self, other: Self) {
         *self = Self::union([*self, other]);
     }
 
@@ -106,5 +103,116 @@ impl AABB {
             return None;
         }
         Some(if tmin > 0.0 { (t1, tmin) } else { (t2, tmax) })
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_aabb_intersection_empty() {
+        let test = |a, b| assert!(AABB::intersection([a, b]).is_empty());
+        test(AABB::new(), AABB::new());
+        test(AABB::bounding_box([P3::new()]), AABB::new());
+        test(
+            AABB::bounding_box([P3::new()]),
+            AABB::bounding_box([P3::all(1.0)]),
+        );
+        test(
+            AABB {
+                min: P3::new(),
+                max: P3::new().x(-1.0),
+            },
+            AABB::bounding_box([P3::all(1.0)]),
+        );
+    }
+
+    #[test]
+    fn test_aabb_intersection() {
+        let test = |a, b, eq| assert_eq!(AABB::intersection([a, b]), eq);
+        test(
+            AABB {
+                min: P3::new().z(-2.0),
+                max: P3::all(3.0).x(5.0),
+            },
+            AABB {
+                min: P3::all(-1.0),
+                max: P3::all(4.0),
+            },
+            AABB {
+                min: P3::new().z(-1.0),
+                max: P3::all(3.0).x(4.0),
+            },
+        )
+    }
+
+    #[test]
+    fn test_aabb_union() {
+        let a = AABB::bounding_box([P3::new().z(2.0), P3::new().x(2.0)]);
+        let b = AABB::bounding_box([P3::new(), P3::new().x(1.0)]);
+        assert_eq!(
+            AABB::union([a, b]),
+            AABB::bounding_box([P3::new(), P3::new().x(2.0).z(2.0)])
+        )
+    }
+
+    #[test]
+    fn test_ray_aabb_intersection() {
+        let aabb = AABB::bounding_box([
+            P3::new().x(100.0).y(100.0).z(100.0),
+            P3::new().x(105.0).y(105.0).z(105.0),
+        ]);
+        let ray = Ray::new(P3::new().x(101.0).y(101.0), V3::new().z(1.0));
+        assert!(aabb
+            .ray_intersection(&ray, Interval::new(0.1, 100.5))
+            .is_some());
+        assert!(aabb
+            .ray_intersection(&ray, Interval::new(100.4, 100.5))
+            .is_some());
+        assert!(aabb
+            .ray_intersection(&ray, Interval::new(0.1, 99.5))
+            .is_none());
+        assert!(aabb
+            .ray_intersection(&ray, Interval::new(105.1, 106.0))
+            .is_none());
+    }
+
+    #[test]
+    fn test_ray_aabb_intersection_angle() {
+        // Diagonal through the AABB is length 1
+        let s = (1.0f64 / 3.0).sqrt();
+        let aabb = AABB::bounding_box([P3::new(), P3::new().x(s).y(s).z(s)]);
+        let ray = Ray::new(P3::new().x(-s).y(-s).z(-s), V3::new().x(1.0).y(1.0).z(1.0));
+        assert!(aabb
+            .ray_intersection(&ray, Interval::new(0.1, 0.9))
+            .is_none());
+        assert!(aabb
+            .ray_intersection(&ray, Interval::new(0.1, 1.1))
+            .is_some());
+        assert!(aabb
+            .ray_intersection(&ray, Interval::new(0.1, 2.1))
+            .is_some());
+        assert!(aabb
+            .ray_intersection(&ray, Interval::new(1.1, 2.1))
+            .is_some());
+        assert!(aabb
+            .ray_intersection(&ray, Interval::new(2.1, 3.1))
+            .is_none());
+    }
+
+    #[test]
+    fn test_ray_aabb_intersection_failure() {
+        let ray = Ray::new(
+            P3::new().x(13.0).y(2.0).z(3.0),
+            V3::new()
+                .x(-0.99999581369879142)
+                .y(-0.0022009767150356608)
+                .z(-0.001878373336654929),
+        );
+        let aabb = AABB::bounding_box([P3::new().x(-5.0).z(-1.0), P3::new().x(5.0).y(2.0).z(1.0)]);
+        let interval = Interval::new(1e-3, f64::INFINITY);
+        let intersection = aabb.ray_intersection(&ray, interval);
+        assert_eq!(intersection, None);
     }
 }
