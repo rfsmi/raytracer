@@ -1,4 +1,4 @@
-use std::iter::once;
+use std::{collections::HashSet, iter::once};
 
 use crate::{
     aabb::AABB,
@@ -78,8 +78,8 @@ impl BVH {
 
 const LEAF_COST: f64 = 1.0;
 const SPLIT_COST: f64 = 1.0 / 8.0;
-const N_BUCKETS: usize = 12;
-const SBVH_ALPHA: f64 = 1e-10;
+const N_BUCKETS: usize = 32;
+const SBVH_ALPHA: f64 = 1e-6;
 
 struct Builder<'p> {
     root_aabb: AABB,
@@ -105,7 +105,6 @@ impl<'p> Builder<'p> {
         let (_, lhs, rhs, _) = &split;
         let overlap = AABB::intersection([lhs.aabb, rhs.aabb]).surface_area();
         if overlap / self.root_aabb.surface_area() > SBVH_ALPHA {
-            eprintln!("Attempting spatial split");
             split = once(split)
                 .chain(best_split(aabb, self.spatial_buckets(&indices)))
                 .min_by(|(.., a), (.., b)| a.total_cmp(b))
@@ -115,17 +114,14 @@ impl<'p> Builder<'p> {
         let (axis, lhs, rhs, cost) = split;
         // Split if we must, or the cost is low enough
         if cost < LEAF_COST * indices.len() as f64 {
-            if lhs.primitives.len() + rhs.primitives.len() > indices.len() {
-                eprintln!("Chose spatial split");
-            }
-            let mut nodes = self.build(lhs.primitives);
+            let mut nodes = self.build(lhs.primitives.into_iter().collect());
             let parent = Node::Split {
                 axis,
                 aabb,
                 skip: nodes.len() + 1,
             };
             nodes.insert(0, parent);
-            nodes.extend(self.build(rhs.primitives));
+            nodes.extend(self.build(rhs.primitives.into_iter().collect()));
             return nodes;
         }
 
@@ -172,14 +168,12 @@ impl<'p> Builder<'p> {
                 let &max_t = bounds.max.axis(axis);
                 for &i in indices {
                     let aabb = self.primitives[i].aabb();
-                    for bucket_i in choose_bucket(&buckets, min_t, max_t, *aabb.min.axis(axis)).. {
-                        let lhs = bucket_i as f64 * bucket_width;
+                    let first_bucket = choose_bucket(&buckets, min_t, max_t, *aabb.min.axis(axis));
+                    for bucket_i in first_bucket..buckets.len() {
+                        let lhs = min_t + bucket_i as f64 * bucket_width;
                         let rhs = lhs + bucket_width;
                         let clipped_aabb = self.primitives[i].clipped_aabb(axis, lhs, rhs);
                         buckets[bucket_i].add(i, clipped_aabb);
-                        if rhs >= *aabb.max.axis(axis) {
-                            break;
-                        }
                     }
                 }
                 (axis, buckets)
@@ -193,6 +187,7 @@ fn best_split(
 ) -> Option<(Axis, Bucket, Bucket, f64)> {
     candidate_buckets
         .flat_map(|(axis, buckets)| {
+            // TODO: This can be optimised
             // Split at each point
             (1..buckets.len()).map(move |i| {
                 let (part_a, part_b) = buckets.split_at(i);
@@ -215,20 +210,20 @@ fn best_split(
 
 #[derive(Clone)]
 struct Bucket {
-    primitives: Vec<usize>,
+    primitives: HashSet<usize>,
     aabb: AABB,
 }
 
 impl Bucket {
     fn new() -> Self {
         Bucket {
-            primitives: Vec::new(),
+            primitives: HashSet::new(),
             aabb: AABB::new(),
         }
     }
 
     fn add(&mut self, primitive: usize, aabb: AABB) {
-        self.primitives.push(primitive);
+        self.primitives.insert(primitive);
         self.aabb.update(aabb);
     }
 }
@@ -244,13 +239,9 @@ fn choose_bucket(buckets: &[Bucket], min_t: f64, max_t: f64, t: f64) -> usize {
 }
 
 fn combine_buckets<'a>(buckets: impl IntoIterator<Item = &'a Bucket>) -> Bucket {
-    // TODO: This can be optimised
-    buckets.into_iter().fold(Bucket::new(), |a, b| {
-        let mut primitives = a.primitives.clone();
-        primitives.extend(&b.primitives);
-        Bucket {
-            primitives,
-            aabb: AABB::union([a.aabb, b.aabb]),
-        }
+    buckets.into_iter().fold(Bucket::new(), |mut a, b| {
+        a.primitives.extend(&b.primitives);
+        a.aabb.update(b.aabb);
+        a
     })
 }
