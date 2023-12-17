@@ -1,3 +1,5 @@
+use std::iter::once;
+
 use crate::{
     aabb::AABB,
     hit::{Hit, HitRecord},
@@ -11,59 +13,15 @@ pub struct Plane {
     pub pos: f64,
 }
 
-const PRIMITIVE_TEST_COST: f64 = 1.0;
-const BVH_SPLIT_COST: f64 = 1.0 / 8.0;
-
 enum Node {
-    ObjectSplit { aabb: AABB, axis: Axis, skip: usize },
+    Split { aabb: AABB, axis: Axis, skip: usize },
     Leaf { aabb: AABB, indices: Vec<usize> },
 }
 
 impl Node {
-    fn build(primitives: &[Box<dyn Hit>], mut indices: Vec<usize>) -> Vec<Node> {
-        let current_primitives = indices.iter().map(|&i| &primitives[i]);
-        let aabb = AABB::union(current_primitives.clone().map(|o| o.aabb()));
-
-        if let Some((axis, split_i, cost)) = object_split::find_best(aabb, current_primitives) {
-            // Split if we must, or the cost is low enough
-            if cost < PRIMITIVE_TEST_COST * indices.len() as f64 {
-                indices.sort_by(|&a, &b| {
-                    primitives[a]
-                        .aabb()
-                        .centroid()
-                        .axis(axis)
-                        .total_cmp(&primitives[b].aabb().centroid().axis(axis))
-                });
-                let rest = indices.split_off(split_i);
-                return Self::object_split(aabb, axis, primitives, indices, rest);
-            }
-        };
-
-        // Otherwise this is just a leaf node
-        vec![Self::Leaf { aabb, indices }]
-    }
-
-    fn object_split(
-        aabb: AABB,
-        axis: Axis,
-        primitives: &[Box<dyn Hit>],
-        a: Vec<usize>,
-        b: Vec<usize>,
-    ) -> Vec<Node> {
-        let mut nodes = Self::build(primitives, a);
-        let parent = Node::ObjectSplit {
-            axis,
-            aabb,
-            skip: nodes.len() + 1,
-        };
-        nodes.insert(0, parent);
-        nodes.extend(Self::build(primitives, b));
-        nodes
-    }
-
     fn aabb(&self) -> &AABB {
         match self {
-            Node::ObjectSplit { aabb, .. } => aabb,
+            Node::Split { aabb, .. } => aabb,
             Node::Leaf { aabb, .. } => aabb,
         }
     }
@@ -77,10 +35,8 @@ pub struct BVH {
 impl BVH {
     pub fn new(primitives: impl IntoIterator<Item = Box<dyn Hit>>) -> Self {
         let primitives: Vec<_> = primitives.into_iter().collect();
-        Self {
-            nodes: Node::build(&primitives, (0..primitives.len()).collect()),
-            primitives,
-        }
+        let nodes = Builder::new(&primitives).build((0..primitives.len()).collect());
+        Self { nodes, primitives }
     }
 
     pub fn hit<'a>(&'a self, r: &Ray, mut ray_t: Interval) -> Option<HitRecord<'a>> {
@@ -96,7 +52,7 @@ impl BVH {
             }
 
             match node {
-                Node::ObjectSplit { axis, skip, .. } => {
+                Node::Split { axis, skip, .. } => {
                     stack.extend(if r.direction.axis(*axis) < &0.0 {
                         [i + 1, i + skip]
                     } else {
@@ -120,78 +76,181 @@ impl BVH {
     }
 }
 
-mod object_split {
-    use super::*;
+const LEAF_COST: f64 = 1.0;
+const SPLIT_COST: f64 = 1.0 / 8.0;
+const N_BUCKETS: usize = 12;
+const SBVH_ALPHA: f64 = 1e-10;
 
-    const N_BUCKETS: usize = 12;
+struct Builder<'p> {
+    root_aabb: AABB,
+    primitives: &'p [Box<dyn Hit>],
+}
 
-    #[derive(Clone, Copy)]
-    struct Bucket {
-        count: usize,
-        aabb: AABB,
+impl<'p> Builder<'p> {
+    fn new(primitives: &'p [Box<dyn Hit>]) -> Self {
+        Self {
+            root_aabb: AABB::union(primitives.iter().map(|p| p.aabb())),
+            primitives,
+        }
     }
 
-    impl Bucket {
-        fn new() -> Self {
-            Bucket {
-                count: 0,
-                aabb: AABB::new(),
+    fn build(&self, indices: Vec<usize>) -> Vec<Node> {
+        let aabb = AABB::union(indices.iter().map(|&i| self.primitives[i].aabb()));
+
+        let Some(mut split) = best_split(aabb, self.object_buckets(&indices)) else {
+            return vec![Node::Leaf { aabb, indices }];
+        };
+
+        // Attempt a spatial split if the best object split has enough overlap
+        let (_, lhs, rhs, _) = &split;
+        let overlap = AABB::intersection([lhs.aabb, rhs.aabb]).surface_area();
+        if overlap / self.root_aabb.surface_area() > SBVH_ALPHA {
+            eprintln!("Attempting spatial split");
+            split = once(split)
+                .chain(best_split(aabb, self.spatial_buckets(&indices)))
+                .min_by(|(.., a), (.., b)| a.total_cmp(b))
+                .unwrap();
+        }
+
+        let (axis, lhs, rhs, cost) = split;
+        // Split if we must, or the cost is low enough
+        if cost < LEAF_COST * indices.len() as f64 {
+            if lhs.primitives.len() + rhs.primitives.len() > indices.len() {
+                eprintln!("Chose spatial split");
             }
+            let mut nodes = self.build(lhs.primitives);
+            let parent = Node::Split {
+                axis,
+                aabb,
+                skip: nodes.len() + 1,
+            };
+            nodes.insert(0, parent);
+            nodes.extend(self.build(rhs.primitives));
+            return nodes;
         }
 
-        fn add(&mut self, aabb: AABB) {
-            self.count += 1;
-            self.aabb.update(aabb);
-        }
+        // Otherwise this is just a leaf node
+        vec![Node::Leaf { aabb, indices }]
     }
 
-    fn combine_buckets<'a>(buckets: impl IntoIterator<Item = &'a Bucket>) -> Bucket {
-        buckets.into_iter().fold(Bucket::new(), |a, b| Bucket {
-            count: a.count + b.count,
-            aabb: AABB::union([a.aabb, b.aabb]),
-        })
-    }
-
-    pub fn find_best<'a>(
-        bounds: AABB,
-        primitives: impl Iterator<Item = &'a Box<dyn Hit>> + Clone,
-    ) -> Option<(Axis, usize, f64)> {
-        let centroids = primitives.clone().map(|o| o.aabb().centroid());
-        let centroid_bounds = AABB::bounding_box(centroids);
+    pub fn object_buckets<'a>(
+        &'a self,
+        indices: &'a [usize],
+    ) -> impl Iterator<Item = (Axis, Vec<Bucket>)> + 'a {
+        let centroid = |&i: &usize| self.primitives[i].aabb().centroid();
+        let bounds = AABB::bounding_box(indices.iter().map(centroid));
         Axis::all()
             // All centroids are at the same point
-            .filter(|axis| (centroid_bounds.size() * axis).length_squared() > 0.0)
-            .flat_map(move |axis| {
+            .filter(move |&axis| *bounds.size().axis(axis) > 0.0)
+            .map(move |axis| {
                 // Assign each primitive to its bucket
-                let mut buckets = [Bucket::new(); N_BUCKETS];
-                let bounds_min = *centroid_bounds.min.axis(axis);
-                let bounds_max = *centroid_bounds.max.axis(axis);
-                for primitive in primitives.clone() {
-                    let centroid = *primitive.aabb().centroid().axis(axis);
-                    let f = (centroid - bounds_min) / (bounds_max - bounds_min);
-                    let mut i = (N_BUCKETS as f64 * f) as usize;
-                    if i == N_BUCKETS {
-                        i -= 1;
-                    }
-                    buckets[i].add(primitive.aabb());
+                let mut buckets = vec![Bucket::new(); N_BUCKETS];
+                let &min_t = bounds.min.axis(axis);
+                let &max_t = bounds.max.axis(axis);
+                for &i in indices {
+                    let &t = self.primitives[i].aabb().centroid().axis(axis);
+                    let bucket_i = choose_bucket(&mut buckets, min_t, max_t, t);
+                    buckets[bucket_i].add(i, self.primitives[i].aabb());
                 }
-                // Split at each point
-                (1..N_BUCKETS).map(move |i| {
-                    let (part_a, part_b) = buckets.split_at(i);
-                    let a = combine_buckets(part_a);
-                    let b = combine_buckets(part_b);
-                    (axis, a, b)
-                })
+                (axis, buckets)
             })
-            .map(|(axis, a, b)| {
-                // Determine the cost
-                let cost = BVH_SPLIT_COST
-                    + PRIMITIVE_TEST_COST
-                        * (a.count as f64 * a.aabb.surface_area()
-                            + b.count as f64 * b.aabb.surface_area())
-                        / bounds.surface_area();
-                (axis, a.count, cost)
-            })
-            .min_by(|(_, _, a), (_, _, b)| a.total_cmp(b))
     }
+
+    pub fn spatial_buckets<'a>(
+        &'a self,
+        indices: &'a [usize],
+    ) -> impl Iterator<Item = (Axis, Vec<Bucket>)> + 'a {
+        let bounds = AABB::union(indices.iter().map(|&i| self.primitives[i].aabb()));
+        Axis::all()
+            // Filter axis where AABB is thin
+            .filter(move |&axis| *bounds.size().axis(axis) > 0.0)
+            .map(move |axis| {
+                // Split each primitive into the buckets it overlaps
+                let mut buckets = vec![Bucket::new(); N_BUCKETS];
+                let bucket_width = bounds.size().axis(axis) / buckets.len() as f64;
+                let &min_t = bounds.min.axis(axis);
+                let &max_t = bounds.max.axis(axis);
+                for &i in indices {
+                    let aabb = self.primitives[i].aabb();
+                    for bucket_i in choose_bucket(&buckets, min_t, max_t, *aabb.min.axis(axis)).. {
+                        let lhs = bucket_i as f64 * bucket_width;
+                        let rhs = lhs + bucket_width;
+                        let clipped_aabb = self.primitives[i].clipped_aabb(axis, lhs, rhs);
+                        buckets[bucket_i].add(i, clipped_aabb);
+                        if rhs >= *aabb.max.axis(axis) {
+                            break;
+                        }
+                    }
+                }
+                (axis, buckets)
+            })
+    }
+}
+
+fn best_split(
+    bounds: AABB,
+    candidate_buckets: impl Iterator<Item = (Axis, Vec<Bucket>)>,
+) -> Option<(Axis, Bucket, Bucket, f64)> {
+    candidate_buckets
+        .flat_map(|(axis, buckets)| {
+            // Split at each point
+            (1..buckets.len()).map(move |i| {
+                let (part_a, part_b) = buckets.split_at(i);
+                let a = combine_buckets(part_a);
+                let b = combine_buckets(part_b);
+                (axis, a, b)
+            })
+        })
+        .map(|(axis, a, b)| {
+            // Determine the cost
+            let cost = SPLIT_COST
+                + LEAF_COST
+                    * (a.primitives.len() as f64 * a.aabb.surface_area()
+                        + b.primitives.len() as f64 * b.aabb.surface_area())
+                    / bounds.surface_area();
+            (axis, a, b, cost)
+        })
+        .min_by(|(.., a), (.., b)| a.total_cmp(b))
+}
+
+#[derive(Clone)]
+struct Bucket {
+    primitives: Vec<usize>,
+    aabb: AABB,
+}
+
+impl Bucket {
+    fn new() -> Self {
+        Bucket {
+            primitives: Vec::new(),
+            aabb: AABB::new(),
+        }
+    }
+
+    fn add(&mut self, primitive: usize, aabb: AABB) {
+        self.primitives.push(primitive);
+        self.aabb.update(aabb);
+    }
+}
+
+fn choose_bucket(buckets: &[Bucket], min_t: f64, max_t: f64, t: f64) -> usize {
+    let f = (t - min_t) / (max_t - min_t);
+    let i = (buckets.len() as f64 * f) as usize;
+    if i == buckets.len() {
+        i - 1
+    } else {
+        i
+    }
+}
+
+fn combine_buckets<'a>(buckets: impl IntoIterator<Item = &'a Bucket>) -> Bucket {
+    // TODO: This can be optimised
+    buckets.into_iter().fold(Bucket::new(), |a, b| {
+        let mut primitives = a.primitives.clone();
+        primitives.extend(&b.primitives);
+        Bucket {
+            primitives,
+            aabb: AABB::union([a.aabb, b.aabb]),
+        }
+    })
 }

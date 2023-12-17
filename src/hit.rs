@@ -1,9 +1,8 @@
 use crate::{
     aabb::AABB,
-    bvh::Plane,
     material::Material,
     ray::{Interval, Ray},
-    vector::{P3, V3},
+    vector::{Axis, P3, V3},
 };
 
 pub struct HitRecord<'a> {
@@ -33,6 +32,6 @@ impl<'a> HitRecord<'a> {
 
 pub trait Hit: Sync {
     fn aabb(&self) -> AABB;
+    fn clipped_aabb(&self, axis: Axis, t1: f64, t2: f64) -> AABB;
     fn hit<'a>(&'a self, r: &Ray, ray_t: Interval) -> Option<HitRecord<'a>>;
-    fn split_aabb(&self, plane: Plane) -> (AABB, AABB);
 }

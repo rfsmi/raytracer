@@ -2,11 +2,10 @@ use std::sync::Arc;
 
 use crate::{
     aabb::AABB,
-    bvh::Plane,
     hit::{Hit, HitRecord},
     material::Material,
     ray::{Interval, Ray},
-    vector::P3,
+    vector::{Axis, P3},
 };
 
 pub struct Sphere {
@@ -51,34 +50,24 @@ impl Hit for Sphere {
         AABB::bounding_box([self.center - self.radius, self.center + self.radius])
     }
 
-    fn split_aabb(&self, plane: Plane) -> (AABB, AABB) {
-        let d = (plane.pos - self.center) * plane.axis;
-        let mut h = (self.radius * self.radius - d.length_squared()).sqrt();
+    fn clipped_aabb(&self, axis: Axis, t1: f64, t2: f64) -> AABB {
+        let d1 = (t1 - self.center) * axis;
+        let d2 = (t2 - self.center) * axis;
+        let mut h = (self.radius * self.radius - d1.min(d2).length_squared()).sqrt();
         if h.is_nan() {
             h = -self.radius;
         }
-        let mut lhs = AABB {
-            min: self.center - plane.axis * self.radius - plane.axis.others() * h,
-            max: self.center + d + plane.axis.others() * h,
+        let mut aabb = AABB {
+            min: self.center + d1 - axis.others() * h,
+            max: self.center + d2 + axis.others() * h,
         };
-        let mut rhs = AABB {
-            min: self.center + d - plane.axis.others() * h,
-            max: self.center + plane.axis * self.radius + plane.axis.others() * h,
-        };
-        let center_box = AABB::bounding_box([
-            self.center - plane.axis.others() * self.radius,
-            self.center + plane.axis.others() * self.radius,
-        ]);
-        if plane.axis.value(d) < 0.0 {
-            rhs.update(center_box);
-        } else {
-            lhs.update(center_box);
+        if axis.value(d1) < 0.0 && 0.0 < axis.value(d2) {
+            aabb.update(AABB::bounding_box([
+                self.center - axis.others() * self.radius,
+                self.center + axis.others() * self.radius,
+            ]));
         }
-        let aabb = self.aabb();
-        (
-            AABB::intersection([aabb, lhs]),
-            AABB::intersection([aabb, rhs]),
-        )
+        AABB::intersection([self.aabb(), aabb])
     }
 }
 
@@ -89,7 +78,7 @@ mod test {
     use super::*;
 
     #[test]
-    fn test_split_aabb() {
+    fn test_clipped_aabb() {
         let sphere = Sphere::new(P3::new(), 5.0, Arc::new(Lambertian::new()));
         assert_eq!(
             sphere.aabb(),
@@ -99,38 +88,28 @@ mod test {
             }
         );
 
-        // Split inside the sphere
+        // Box inside the sphere
         assert_eq!(
-            sphere.split_aabb(Plane {
-                axis: Axis::X,
-                pos: 3.0
-            }),
-            (
-                AABB {
-                    min: P3::all(-5.0),
-                    max: P3::all(5.0).x(3.0)
-                },
-                AABB {
-                    min: P3::all(-4.0).x(3.0),
-                    max: P3::all(4.0).x(5.0)
-                }
-            )
+            sphere.clipped_aabb(Axis::X, -3.0, 3.0),
+            AABB {
+                min: P3::all(-5.0).x(-3.0),
+                max: P3::all(5.0).x(3.0),
+            }
         );
 
-        // Split to the right of the sphere
-        let (lhs, rhs) = sphere.split_aabb(Plane {
-            axis: Axis::X,
-            pos: 5.1,
-        });
-        assert_eq!(lhs, sphere.aabb());
-        assert!(rhs.is_empty());
+        // Box intersecting the right of the sphere
+        assert_eq!(
+            sphere.clipped_aabb(Axis::X, 0.0, 5.2),
+            AABB {
+                min: P3::all(-5.0).x(0.0),
+                max: P3::all(5.0),
+            }
+        );
 
-        // Split to the left of the sphere
-        let (lhs, rhs) = sphere.split_aabb(Plane {
-            axis: Axis::X,
-            pos: -5.1,
-        });
-        assert!(lhs.is_empty());
-        assert_eq!(rhs, sphere.aabb());
+        // Box to the right of the sphere
+        assert!(sphere.clipped_aabb(Axis::X, 5.1, 5.2).is_empty());
+
+        // Box to the left of the sphere
+        assert!(sphere.clipped_aabb(Axis::X, -5.2, -5.1).is_empty());
     }
 }
