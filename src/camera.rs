@@ -1,12 +1,13 @@
 use std::{collections::HashMap, time::Instant};
 
+use glam::DVec3;
 use indicatif::*;
 
 use crate::{
     bvh::BVH,
     ray::{Interval, Ray},
     util::default_struct,
-    vector::{P3, V3},
+    vector,
 };
 use itertools::Itertools;
 use rayon::iter::{IntoParallelIterator, ParallelBridge, ParallelIterator};
@@ -17,9 +18,9 @@ default_struct!(Config {
     samples_per_pixel: usize = 10,
     max_depth: usize = 10,
     vfov: f64 = 90.0,
-    lookfrom: P3 = P3::new().z(-1.0),
-    lookat: P3 = P3::new(),
-    vup: V3 = V3::new().y(1.0),
+    lookfrom: DVec3 = DVec3::NEG_Z,
+    lookat: DVec3 = DVec3::ZERO,
+    vup: DVec3 = DVec3::Y,
     defocus_angle: f64 = 0.0,
     focus_dist: f64 = 10.0,
 });
@@ -27,12 +28,12 @@ default_struct!(Config {
 pub struct Camera {
     config: Config,
     image_height: u32,
-    center: P3,
-    pixel00_loc: P3,
-    pixel_delta_u: V3,
-    pixel_delta_v: V3,
-    defocus_disk_u: V3,
-    defocus_disk_v: V3,
+    center: DVec3,
+    pixel00_loc: DVec3,
+    pixel_delta_u: DVec3,
+    pixel_delta_v: DVec3,
+    defocus_disk_u: DVec3,
+    defocus_disk_v: DVec3,
 }
 
 impl Config {
@@ -47,9 +48,9 @@ impl Config {
         let viewport_width = viewport_height * self.image_width as f64 / image_height as f64;
 
         // Calculate the basis vectors
-        let w = (self.lookfrom - self.lookat).unit();
-        let u = self.vup.cross(&w).unit();
-        let v = w.cross(&u);
+        let w = (self.lookfrom - self.lookat).normalize();
+        let u = self.vup.cross(w).normalize();
+        let v = w.cross(u);
 
         // Vectors spanning the viewport
         let viewport_u = viewport_width * u;
@@ -81,13 +82,10 @@ impl Config {
     }
 }
 
-fn write_colour(colour: &V3, samples_per_pixel: usize) {
+fn write_colour(colour: DVec3, samples_per_pixel: usize) {
     let colour = colour / samples_per_pixel as f64;
     let intensity = Interval::new(0.0, 1.0);
-    let gamma_colour = V3::new()
-        .x(colour.x.sqrt())
-        .y(colour.y.sqrt())
-        .z(colour.z.sqrt());
+    let gamma_colour = DVec3::new(colour.x.sqrt(), colour.y.sqrt(), colour.z.sqrt());
     println!(
         "{} {} {}",
         (255.0 * intensity.clamp(gamma_colour.x)) as u8,
@@ -97,23 +95,23 @@ fn write_colour(colour: &V3, samples_per_pixel: usize) {
 }
 
 impl Camera {
-    pub fn ray_colour(&self, bvh: &BVH, r: &Ray, depth: usize) -> V3 {
+    pub fn ray_colour(&self, bvh: &BVH, r: &Ray, depth: usize) -> DVec3 {
         if depth == 0 {
-            return V3::new();
+            return DVec3::ZERO;
         }
         let Some(hr) = bvh.hit(r, Interval::new(1e-3, f64::INFINITY)) else {
             // Blue sky
-            let unit_direction = r.direction.unit();
+            let unit_direction = r.direction.normalize();
             let a = (unit_direction.y + 1.0) / 2.0;
-            return (1.0 - a) * V3::new().x(1.0).y(1.0).z(1.0) + a * V3::new().x(0.5).y(0.7).z(1.0);
+            return (1.0 - a) * DVec3::ONE + a * DVec3::new(0.5, 0.7, 1.0);
         };
         let Some((attenuation, scattered)) = hr.material.scatter(r, &hr) else {
-            return V3::new();
+            return DVec3::ZERO;
         };
         attenuation * self.ray_colour(bvh, &scattered, depth - 1)
     }
 
-    fn pixel_sample_square(&self) -> V3 {
+    fn pixel_sample_square(&self) -> DVec3 {
         let px = -0.5 + ::rand::random::<f64>();
         let py = -0.5 + ::rand::random::<f64>();
         (px * self.pixel_delta_u) + (py * self.pixel_delta_v)
@@ -130,7 +128,7 @@ impl Camera {
             self.center
         } else {
             // Sample defocus disk
-            let p = V3::random_within_unit_disk();
+            let p = vector::random_within_unit_disk();
             self.center + p.x * self.defocus_disk_u + p.y * self.defocus_disk_v
         };
         let ray_direction = pixel_sample - ray_origin;
@@ -150,7 +148,7 @@ impl Camera {
                         let r = self.get_ray(i, j);
                         self.ray_colour(bvh, &r, self.config.max_depth)
                     })
-                    .reduce(V3::new, |a, b| a + b);
+                    .reduce(|| DVec3::ZERO, |a, b| a + b);
                 ((i, j), colour)
             })
             .progress_count((self.image_height * self.config.image_width) as u64)
@@ -159,7 +157,7 @@ impl Camera {
         for j in 0..self.image_height {
             for i in 0..self.config.image_width {
                 write_colour(
-                    image.get(&(i, j)).expect("there is a pixel"),
+                    *image.get(&(i, j)).expect("there is a pixel"),
                     self.config.samples_per_pixel,
                 );
             }

@@ -1,36 +1,35 @@
-use crate::{
-    ray::{Interval, Ray},
-    vector::{Axis, P3, V3},
-};
+use glam::DVec3;
+
+use crate::ray::{Interval, Ray};
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub struct AABB {
-    pub min: P3,
-    pub max: P3,
+    pub min: DVec3,
+    pub max: DVec3,
 }
 
 impl AABB {
     pub fn new() -> Self {
         Self {
-            min: P3::all(f64::INFINITY),
-            max: P3::all(f64::NEG_INFINITY),
+            min: DVec3::splat(f64::INFINITY),
+            max: DVec3::splat(f64::NEG_INFINITY),
         }
     }
 
     pub fn is_empty(&self) -> bool {
-        Axis::all().any(|axis| self.min.axis(axis) > self.max.axis(axis))
+        self.size().min_element() < 0.0
     }
 
-    pub fn centroid(&self) -> P3 {
+    pub fn centroid(&self) -> DVec3 {
         self.min + 0.5 * (self.max - self.min)
     }
 
-    pub fn size(&self) -> V3 {
+    pub fn size(&self) -> DVec3 {
         self.max - self.min
     }
 
     pub fn surface_area(&self) -> f64 {
-        let V3 { x, y, z } = self.size();
+        let DVec3 { x, y, z } = self.size();
         2.0 * (x * y + x * z + z * y)
     }
 
@@ -38,36 +37,19 @@ impl AABB {
         *self = Self::union([*self, other]);
     }
 
-    pub fn bounding_box(points: impl IntoIterator<Item = P3>) -> Self {
+    pub fn bounding_box(points: impl IntoIterator<Item = DVec3>) -> Self {
         let mut points = points.into_iter();
         let Some(p) = points.next() else {
             return Self::new();
         };
-        let (min, max) = points.fold((p, p), |(min, max), p| {
-            (
-                P3::new()
-                    .x(min.x.min(p.x))
-                    .y(min.y.min(p.y))
-                    .z(min.z.min(p.z)),
-                P3::new()
-                    .x(max.x.max(p.x))
-                    .y(max.y.max(p.y))
-                    .z(max.z.max(p.z)),
-            )
-        });
+        let (min, max) = points.fold((p, p), |(min, max), p| (min.min(p), max.max(p)));
         Self { min, max }
     }
 
     pub fn union(aabbs: impl IntoIterator<Item = Self>) -> Self {
         aabbs.into_iter().fold(Self::new(), |a, b| Self {
-            min: P3::new()
-                .x(a.min.x.min(b.min.x))
-                .y(a.min.y.min(b.min.y))
-                .z(a.min.z.min(b.min.z)),
-            max: P3::new()
-                .x(a.max.x.max(b.max.x))
-                .y(a.max.y.max(b.max.y))
-                .z(a.max.z.max(b.max.z)),
+            min: DVec3::min(a.min, b.min),
+            max: DVec3::max(a.max, b.max),
         })
     }
 
@@ -75,22 +57,16 @@ impl AABB {
         aabbs
             .into_iter()
             .reduce(|a, b| Self {
-                min: P3::new()
-                    .x(a.min.x.max(b.min.x))
-                    .y(a.min.y.max(b.min.y))
-                    .z(a.min.z.max(b.min.z)),
-                max: P3::new()
-                    .x(a.max.x.min(b.max.x))
-                    .y(a.max.y.min(b.max.y))
-                    .z(a.max.z.min(b.max.z)),
+                min: DVec3::max(a.min, b.min),
+                max: DVec3::min(a.max, b.max),
             })
             .unwrap_or(Self {
-                max: P3::all(f64::INFINITY),
-                min: P3::all(f64::NEG_INFINITY),
+                max: DVec3::INFINITY,
+                min: DVec3::NEG_INFINITY,
             })
     }
 
-    pub fn ray_intersection(&self, r: &Ray, ray_t: Interval) -> Option<(V3, f64)> {
+    pub fn ray_intersection(&self, r: &Ray, ray_t: Interval) -> Option<(DVec3, f64)> {
         if self.is_empty() {
             return None;
         }
@@ -114,17 +90,17 @@ mod test {
     fn test_aabb_intersection_empty() {
         let test = |a, b| assert!(AABB::intersection([a, b]).is_empty());
         test(AABB::new(), AABB::new());
-        test(AABB::bounding_box([P3::new()]), AABB::new());
+        test(AABB::bounding_box([DVec3::ZERO]), AABB::new());
         test(
-            AABB::bounding_box([P3::new()]),
-            AABB::bounding_box([P3::all(1.0)]),
+            AABB::bounding_box([DVec3::ZERO]),
+            AABB::bounding_box([DVec3::splat(1.0)]),
         );
         test(
             AABB {
-                min: P3::new(),
-                max: P3::new().x(-1.0),
+                min: DVec3::ZERO,
+                max: DVec3::new(0.0, 0.0, -1.0),
             },
-            AABB::bounding_box([P3::all(1.0)]),
+            AABB::bounding_box([DVec3::splat(1.0)]),
         );
     }
 
@@ -133,37 +109,37 @@ mod test {
         let test = |a, b, eq| assert_eq!(AABB::intersection([a, b]), eq);
         test(
             AABB {
-                min: P3::new().z(-2.0),
-                max: P3::all(3.0).x(5.0),
+                min: DVec3::new(0.0, 0.0, -2.0),
+                max: DVec3::new(5.0, 3.0, 3.0),
             },
             AABB {
-                min: P3::all(-1.0),
-                max: P3::all(4.0),
+                min: DVec3::splat(-1.0),
+                max: DVec3::splat(4.0),
             },
             AABB {
-                min: P3::new().z(-1.0),
-                max: P3::all(3.0).x(4.0),
+                min: DVec3::new(0.0, 0.0, -1.0),
+                max: DVec3::new(4.0, 3.0, 3.0),
             },
         )
     }
 
     #[test]
     fn test_aabb_union() {
-        let a = AABB::bounding_box([P3::new().z(2.0), P3::new().x(2.0)]);
-        let b = AABB::bounding_box([P3::new(), P3::new().x(1.0)]);
+        let a = AABB::bounding_box([DVec3::new(0.0, 0.0, 2.0), DVec3::new(2.0, 0.0, 0.0)]);
+        let b = AABB::bounding_box([DVec3::ZERO, DVec3::new(1.0, 0.0, 0.0)]);
         assert_eq!(
             AABB::union([a, b]),
-            AABB::bounding_box([P3::new(), P3::new().x(2.0).z(2.0)])
+            AABB::bounding_box([DVec3::ZERO, DVec3::new(2.0, 0.0, 2.0)])
         )
     }
 
     #[test]
     fn test_ray_aabb_intersection() {
         let aabb = AABB::bounding_box([
-            P3::new().x(100.0).y(100.0).z(100.0),
-            P3::new().x(105.0).y(105.0).z(105.0),
+            DVec3::new(100.0, 100.0, 100.0),
+            DVec3::new(105.0, 105.0, 105.0),
         ]);
-        let ray = Ray::new(P3::new().x(101.0).y(101.0), V3::new().z(1.0));
+        let ray = Ray::new(DVec3::new(101.0, 101.0, 0.0), DVec3::new(0.0, 0.0, 1.0));
         assert!(aabb
             .ray_intersection(&ray, Interval::new(0.1, 100.5))
             .is_some());
@@ -182,8 +158,8 @@ mod test {
     fn test_ray_aabb_intersection_angle() {
         // Diagonal through the AABB is length 1
         let s = (1.0f64 / 3.0).sqrt();
-        let aabb = AABB::bounding_box([P3::new(), P3::new().x(s).y(s).z(s)]);
-        let ray = Ray::new(P3::new().x(-s).y(-s).z(-s), V3::new().x(1.0).y(1.0).z(1.0));
+        let aabb = AABB::bounding_box([DVec3::ZERO, DVec3::splat(s)]);
+        let ray = Ray::new(DVec3::splat(-s), DVec3::splat(1.0));
         assert!(aabb
             .ray_intersection(&ray, Interval::new(0.1, 0.9))
             .is_none());
@@ -204,13 +180,14 @@ mod test {
     #[test]
     fn test_ray_aabb_intersection_failure() {
         let ray = Ray::new(
-            P3::new().x(13.0).y(2.0).z(3.0),
-            V3::new()
-                .x(-0.99999581369879142)
-                .y(-0.0022009767150356608)
-                .z(-0.001878373336654929),
+            DVec3::new(13.0, 2.0, 3.0),
+            DVec3::new(
+                -0.99999581369879142,
+                -0.0022009767150356608,
+                -0.001878373336654929,
+            ),
         );
-        let aabb = AABB::bounding_box([P3::new().x(-5.0).z(-1.0), P3::new().x(5.0).y(2.0).z(1.0)]);
+        let aabb = AABB::bounding_box([DVec3::new(-5.0, 0.0, -1.0), DVec3::new(5.0, 2.0, 1.0)]);
         let interval = Interval::new(1e-3, f64::INFINITY);
         let intersection = aabb.ray_intersection(&ray, interval);
         assert_eq!(intersection, None);

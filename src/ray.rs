@@ -1,9 +1,9 @@
-use crate::vector::{P3, V3};
+use glam::DVec3;
 
 pub struct Ray {
-    pub origin: P3,
-    pub direction: V3,
-    pub inv_direction: V3,
+    pub origin: DVec3,
+    pub direction: DVec3,
+    pub inv_direction: DVec3,
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -13,8 +13,8 @@ pub struct Interval {
 }
 
 impl Ray {
-    pub fn new(origin: P3, direction: V3) -> Self {
-        let direction = direction.unit();
+    pub fn new(origin: DVec3, direction: DVec3) -> Self {
+        let direction = direction.normalize();
         Ray {
             origin,
             direction,
@@ -22,7 +22,7 @@ impl Ray {
         }
     }
 
-    pub fn at(&self, t: f64) -> P3 {
+    pub fn at(&self, t: f64) -> DVec3 {
         self.origin + t * self.direction
     }
 }

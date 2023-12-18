@@ -1,21 +1,29 @@
 use std::{collections::HashSet, iter::once};
 
+use glam::DVec3;
+
 use crate::{
     aabb::AABB,
     hit::{Hit, HitRecord},
     ray::{Interval, Ray},
-    vector::Axis,
 };
 
 #[derive(Clone, Copy, PartialEq)]
 pub struct Plane {
-    pub axis: Axis,
+    pub axis: DVec3,
     pub pos: f64,
 }
 
 enum Node {
-    Split { aabb: AABB, axis: Axis, skip: usize },
-    Leaf { aabb: AABB, indices: Vec<usize> },
+    Split {
+        aabb: AABB,
+        axis: DVec3,
+        skip: usize,
+    },
+    Leaf {
+        aabb: AABB,
+        indices: Vec<usize>,
+    },
 }
 
 impl Node {
@@ -52,8 +60,8 @@ impl BVH {
             }
 
             match node {
-                Node::Split { axis, skip, .. } => {
-                    stack.extend(if r.direction.axis(*axis) < &0.0 {
+                &Node::Split { axis, skip, .. } => {
+                    stack.extend(if get_axis(axis)(r.direction) < 0.0 {
                         [i + 1, i + skip]
                     } else {
                         [i + skip, i + 1]
@@ -132,59 +140,70 @@ impl<'p> Builder<'p> {
     pub fn object_buckets<'a>(
         &'a self,
         indices: &'a [usize],
-    ) -> impl Iterator<Item = (Axis, Vec<Bucket>)> + 'a {
+    ) -> impl Iterator<Item = (DVec3, Vec<Bucket>)> + 'a {
         let centroid = |&i: &usize| self.primitives[i].aabb().centroid();
         let bounds = AABB::bounding_box(indices.iter().map(centroid));
-        Axis::all()
-            // All centroids are at the same point
-            .filter(move |&axis| *bounds.size().axis(axis) > 0.0)
-            .map(move |axis| {
-                // Assign each primitive to its bucket
-                let mut buckets = vec![Bucket::new(); N_BUCKETS];
-                let &min_t = bounds.min.axis(axis);
-                let &max_t = bounds.max.axis(axis);
-                for &i in indices {
-                    let &t = self.primitives[i].aabb().centroid().axis(axis);
-                    let bucket_i = choose_bucket(&mut buckets, min_t, max_t, t);
-                    buckets[bucket_i].add(i, self.primitives[i].aabb());
-                }
-                (axis, buckets)
-            })
+        iter_bounds_axes(bounds).map(move |(axis, min_t, max_t)| {
+            // Assign each primitive to its bucket
+            let mut buckets = vec![Bucket::new(); N_BUCKETS];
+            for &i in indices {
+                let t = get_axis(axis)(self.primitives[i].aabb().centroid());
+                let bucket_i = choose_bucket(&mut buckets, min_t, max_t, t);
+                buckets[bucket_i].add(i, self.primitives[i].aabb());
+            }
+            (axis, buckets)
+        })
     }
 
     pub fn spatial_buckets<'a>(
         &'a self,
         indices: &'a [usize],
-    ) -> impl Iterator<Item = (Axis, Vec<Bucket>)> + 'a {
+    ) -> impl Iterator<Item = (DVec3, Vec<Bucket>)> + 'a {
         let bounds = AABB::union(indices.iter().map(|&i| self.primitives[i].aabb()));
-        Axis::all()
-            // Filter axis where AABB is thin
-            .filter(move |&axis| *bounds.size().axis(axis) > 0.0)
-            .map(move |axis| {
-                // Split each primitive into the buckets it overlaps
-                let mut buckets = vec![Bucket::new(); N_BUCKETS];
-                let bucket_width = bounds.size().axis(axis) / buckets.len() as f64;
-                let &min_t = bounds.min.axis(axis);
-                let &max_t = bounds.max.axis(axis);
-                for &i in indices {
-                    let aabb = self.primitives[i].aabb();
-                    let first_bucket = choose_bucket(&buckets, min_t, max_t, *aabb.min.axis(axis));
-                    for bucket_i in first_bucket..buckets.len() {
-                        let lhs = min_t + bucket_i as f64 * bucket_width;
-                        let rhs = lhs + bucket_width;
-                        let clipped_aabb = self.primitives[i].clipped_aabb(axis, lhs, rhs);
-                        buckets[bucket_i].add(i, clipped_aabb);
-                    }
+        iter_bounds_axes(bounds).map(move |(axis, min_t, max_t)| {
+            // Split each primitive into the buckets it overlaps
+            let mut buckets = vec![Bucket::new(); N_BUCKETS];
+            let bucket_width = get_axis(axis)(bounds.size()) / buckets.len() as f64;
+            for &i in indices {
+                let aabb = self.primitives[i].aabb();
+                let first_bucket = choose_bucket(&buckets, min_t, max_t, get_axis(axis)(aabb.min));
+                for bucket_i in first_bucket..buckets.len() {
+                    let lhs = min_t + bucket_i as f64 * bucket_width;
+                    let rhs = lhs + bucket_width;
+                    let clipped_aabb = self.primitives[i].clipped_aabb(axis, lhs, rhs);
+                    buckets[bucket_i].add(i, clipped_aabb);
                 }
-                (axis, buckets)
-            })
+            }
+            (axis, buckets)
+        })
     }
+}
+
+fn get_axis(axis: DVec3) -> impl Fn(DVec3) -> f64 {
+    move |v| {
+        if axis == DVec3::X {
+            v.x
+        } else if axis == DVec3::Y {
+            v.y
+        } else if axis == DVec3::Z {
+            v.z
+        } else {
+            panic!()
+        }
+    }
+}
+
+fn iter_bounds_axes(bounds: AABB) -> impl Iterator<Item = (DVec3, f64, f64)> {
+    DVec3::AXES
+        .into_iter()
+        .map(move |axis| (axis, get_axis(axis)(bounds.min), get_axis(axis)(bounds.max)))
+        .filter(|(_, min_t, max_t)| (max_t - min_t) > 0.0)
 }
 
 fn best_split(
     bounds: AABB,
-    candidate_buckets: impl Iterator<Item = (Axis, Vec<Bucket>)>,
-) -> Option<(Axis, Bucket, Bucket, f64)> {
+    candidate_buckets: impl Iterator<Item = (DVec3, Vec<Bucket>)>,
+) -> Option<(DVec3, Bucket, Bucket, f64)> {
     candidate_buckets
         .flat_map(|(axis, buckets)| {
             // TODO: This can be optimised
