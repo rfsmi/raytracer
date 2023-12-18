@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use bevy::app::App;
 use bvh::BVH;
 use camera::Config;
 use glam::DVec3;
@@ -9,6 +10,7 @@ use rand::{random, thread_rng, Rng};
 use crate::{hit::Hit, sphere::Sphere};
 
 mod aabb;
+mod app;
 mod bvh;
 mod camera;
 mod hit;
